@@ -50,12 +50,34 @@ jobs:
                 syslinux syslinux-common isolinux
               ./build.sh
             '
-      - name: Prüfsumme & Inhalt
-        if: always()
+      - name: ISO prüfen
         run: |
-          ls -lh out/ || true
-          cat out/*.sha256 || true
-          sudo tail -n 60 live/build.log || true
+          set -euo pipefail
+          ls -lh out/
+          cat out/*.sha256
+          echo "--- Hook-Ausgaben ---"
+          grep -E "^(I|W|E): " live/build.log | grep -Ev "^I: (Retrieving|Validating|Extracting|Unpacking|Configuring|Installing|Checking|Base|Resolving|Found|Chosen|Keyring)" || true
+          sudo apt-get install -y -qq xorriso squashfs-tools >/dev/null
+          ISO=$(ls out/*.iso)
+          WORK=$(mktemp -d)
+          xorriso -osirrox on -indev "$ISO" -extract /live/filesystem.squashfs "$WORK/fs.sq" \
+                  -extract /boot/grub/grub.cfg "$WORK/grub.cfg" -extract /isolinux/live.cfg "$WORK/live.cfg" 2>/dev/null
+          unsquashfs -l "$WORK/fs.sq" > "$WORK/files.txt"
+          echo "--- Prüfungen ---"
+          for f in /usr/lib/virtualbox/VBoxHeadless /usr/lib/virtualbox/VirtualBoxVM /usr/bin/VBoxManage \
+                   /misc/vboxdrv.ko /misc/vboxnetflt.ko /misc/vboxnetadp.ko \
+                   /usr/lib/vmbox/vmboxd/server.py /usr/bin/vmbox-shell /usr/sbin/vmbox-installer \
+                   /usr/share/vmbox/ui/index.html /etc/systemd/system/multi-user.target.wants/vmboxd.service \
+                   /etc/systemd/system/multi-user.target.wants/vmbox-session.service /usr/bin/openbox /usr/bin/wmctrl; do
+            if grep -q -- "$f\$" "$WORK/files.txt"; then echo "OK      $f"; else echo "FEHLT   $f"; FAIL=1; fi
+          done
+          grep -q "vmbox.install" "$WORK/grub.cfg" && echo "OK      GRUB-Eintrag 'VMBox installieren'" || { echo "FEHLT   GRUB-Eintrag"; FAIL=1; }
+          grep -q "vmbox.install" "$WORK/live.cfg" && echo "OK      ISOLINUX-Eintrag 'VMBox installieren'" || { echo "FEHLT   ISOLINUX-Eintrag"; FAIL=1; }
+          grep -E "^menuentry" "$WORK/grub.cfg" || true
+          exit ${FAIL:-0}
+      - name: Build-Log (Ende)
+        if: failure()
+        run: sudo tail -n 80 live/build.log || true
       - name: ISO hochladen
         uses: actions/upload-artifact@v4
         with:
