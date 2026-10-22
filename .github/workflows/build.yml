@@ -81,6 +81,10 @@ jobs:
           grep -q "vmbox.install" "$WORK/live.cfg" && echo "OK      ISOLINUX-Eintrag 'VMBox installieren'" || { echo "FEHLT   ISOLINUX-Eintrag"; FAIL=1; }
           grep -q "modprobe.blacklist=kvm" "$WORK/grub.cfg" && echo "OK      KVM beim Booten gesperrt (GRUB)" || { echo "FEHLT   KVM-Sperre (GRUB)"; FAIL=1; }
           grep -q "modprobe.blacklist=kvm" "$WORK/live.cfg" && echo "OK      KVM beim Booten gesperrt (ISOLINUX)" || { echo "FEHLT   KVM-Sperre (ISOLINUX)"; FAIL=1; }
+          unsquashfs -q -d "$WORK/vbox" "$WORK/fs.sq" usr/lib/virtualbox/VBoxVMM.so >/dev/null
+          for p in "AMD Ryzen 7 1800X Eight-Core" "Intel Core i7-6700K"; do
+            grep -aq "$p" "$WORK"/vbox/usr/lib/virtualbox/VBoxVMM.so && echo "OK      CPU-Profil '$p'" || { echo "FEHLT   CPU-Profil '$p'"; FAIL=1; }
+          done
           grep -E "^menuentry" "$WORK/grub.cfg" || true
           exit ${FAIL:-0}
       - name: Build-Log (Ende)
