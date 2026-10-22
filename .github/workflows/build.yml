@@ -25,6 +25,10 @@ jobs:
         run: make lint
       - name: Unit-Tests
         run: make test
+      - name: Installer-Dialogtest (als root, im Pseudo-Terminal)
+        run: |
+          sudo apt-get install -y -qq whiptail >/dev/null
+          sudo python3 -m unittest discover -s tests -p "test_installer.py" -v
 
   iso:
     name: ISO bauen

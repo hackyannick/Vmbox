@@ -10,9 +10,17 @@
 #               /storage/state -> /var/lib/vmbox (password, ISO images)
 set -uo pipefail
 
+# whiptail draws its dialogs on stdout; to capture a selection we swap stdout
+# and stderr (3>&1 1>&2 2>&3), so the dialogs are then drawn on *stderr*.
+# If stderr is not the terminal (e.g. the systemd journal) every input dialog
+# would be invisible and the installer would seem to hang.
+if [ -t 1 ] && [ ! -t 2 ]; then
+    exec 2>&1
+fi
+
 TITLE="VMBox Installation"
-LOG=/var/log/vmbox-installer.log
-MEDIUM=/run/live/medium
+LOG=${VMBOX_INSTALLER_LOG:-/var/log/vmbox-installer.log}
+MEDIUM=${VMBOX_MEDIUM:-/run/live/medium}
 SQUASHFS="$MEDIUM/live/filesystem.squashfs"
 TARGET=/mnt/vmbox-target
 MAPPER=vmbox-install-storage
