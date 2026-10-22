@@ -108,6 +108,7 @@ class App:
                         self.lock()
                     elif ticks % 10 == 0 and self.toolstack.display.available():
                         self.toolstack.ensure_frontends()
+                        self.toolstack.apply_resolution_hints()
                 except Exception:  # noqa: BLE001
                     time.sleep(5)
 

@@ -262,6 +262,8 @@ class FakeVBoxManage:
             vm["info"]["clipboard"] = opts[-1]
         elif action == "nic1":
             vm["info"]["nic1"] = opts[0]
+        elif action == "setvideomodehint":
+            vm["info"]["VideoModeHint"] = "%sx%sx%s" % tuple(opts[:3])
         elif action in ("reset", "setlinkstate1"):
             pass
         else:

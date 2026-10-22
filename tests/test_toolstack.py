@@ -137,6 +137,23 @@ class ToolstackTest(unittest.TestCase):
         self.ts.action(vm["uuid"], "start")
         self.assertEqual(self.vbox.extradata(vm["uuid"])["CustomVideoMode1"], "2560x1403x32")
 
+    def test_guest_with_additions_gets_window_size_as_resolution(self):
+        self.display.screen_size = lambda: (1920, 1200)
+        vm = self.create("Win7", template="windows7")
+        self.ts.action(vm["uuid"], "start")
+        info = self.fake.vms[vm["uuid"]]["info"]
+        self.ts.apply_resolution_hints()
+        self.assertNotIn("VideoModeHint", info)          # Guest Additions not running yet
+        info["GuestAdditionsRunLevel"] = "3"
+        self.ts.apply_resolution_hints()
+        self.assertEqual(info["VideoModeHint"], "1920x1163x32")
+        calls = len(self.fake.calls)
+        self.ts.apply_resolution_hints()                  # same size: no new hint
+        self.assertFalse(any(c[:3] == ["controlvm", vm["uuid"], "setvideomodehint"] for c in self.fake.calls[calls:]))
+        self.display.screen_size = lambda: (2560, 1440)   # other monitor
+        self.ts.apply_resolution_hints()
+        self.assertEqual(info["VideoModeHint"], "2560x1403x32")
+
     def test_3d_can_be_toggled_while_stopped(self):
         vm = self.create(template="linux")
         self.assertTrue(vm["accelerate3d"])

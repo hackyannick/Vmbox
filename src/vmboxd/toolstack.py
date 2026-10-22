@@ -62,6 +62,8 @@ GLOBAL_EXTRADATA = {
     "GUI/SuppressMessages": "all",
     "GUI/Input/AutoCapture": "false",
     "GUI/NotificationCenter/Alignment": "Bottom",
+    # Guests may use any resolution - VMBox itself tells them the window size.
+    "GUI/MaxGuestResolution": "any",
 }
 
 # Per-VM window settings: VMBox owns the chrome, VirtualBox shows only the guest.
@@ -115,6 +117,7 @@ class Toolstack:
         self._usb_failures = {}
         self._frontend_launched = {}
         self._window_missing = {}
+        self._mode_hinted = {}
         self.is_locked = lambda: False
 
     # ------------------------------------------------------------------ #
@@ -163,6 +166,8 @@ class Toolstack:
             "hidden": _bool(x("Hidden")),
             "start_on_boot": _bool(x("StartOnBoot")),
             "resume_on_boot": _bool(x("ResumeOnBoot")),
+            # 0 = no Guest Additions, 1 = drivers, 2 = services, 3 = desktop integration
+            "ga_runlevel": int(info.get("GuestAdditionsRunLevel") or (2 if info.get("GuestAdditionsVersion") else 0)),
             "disposable": _bool(x("Disposable")),
             "memory": int(info.get("memory", 0) or 0),
             "cpus": int(info.get("cpus", 1) or 1),
@@ -578,6 +583,39 @@ class Toolstack:
             if mode[0] >= 640 and mode[1] >= 480 and mode not in result:
                 result.append(mode)
         return result[:MAX_CUSTOM_MODES]
+
+    def window_size(self):
+        """Size of a VM window: the primary screen below the VMBox bar."""
+        try:
+            size = self.display.screen_size()
+        except DisplayError:
+            return None
+        if not size or size[1] <= BAR_HEIGHT:
+            return None
+        return (size[0], size[1] - BAR_HEIGHT)
+
+    def apply_resolution_hints(self):
+        """Tell guests with Guest Additions to use exactly the window size.
+
+        The VirtualBox window would normally send this "video mode hint" when
+        it is resized; as VMBox maximises the windows itself that does not
+        reliably happen, so guests stayed at e.g. 1280x1024."""
+        size = self.window_size()
+        for vm in self.list_vms():
+            uuid = vm["uuid"]
+            if vm["type"] != "user" or vm["state"] != "running" or vm["ga_runlevel"] < 2 or not size:
+                if vm["state"] != "running":
+                    self._mode_hinted.pop(uuid, None)
+                continue
+            if self._mode_hinted.get(uuid) == size:
+                continue
+            try:
+                self.vbox.control(uuid, "setvideomodehint", size[0], size[1], 32)
+                self._mode_hinted[uuid] = size
+                log.info("resolution hint %dx%d for %s", size[0], size[1], vm["name"])
+            except VBoxError as exc:
+                log.warning("resolution hint for %s failed: %s", vm["name"], exc)
+                self._mode_hinted[uuid] = size   # do not retry every few seconds
 
     def _apply_video_modes(self, uuid):
         try:
