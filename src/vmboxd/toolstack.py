@@ -76,8 +76,9 @@ def _flag(value):
 
 
 class Toolstack:
-    def __init__(self, vbox, display, iso_dir, cache_ttl=1.5):
+    def __init__(self, vbox, display, iso_dir, cache_ttl=1.5, kvm_loaded=lambda: False):
         self.vbox = vbox
+        self.kvm_loaded = kvm_loaded
         self.display = display
         self.iso_dir = iso_dir
         self.cache_ttl = cache_ttl
@@ -85,6 +86,7 @@ class Toolstack:
         self._cache = None
         self._usb_failures = {}
         self._frontend_launched = {}
+        self._window_missing = {}
         self.is_locked = lambda: False
 
     # ------------------------------------------------------------------ #
@@ -498,6 +500,11 @@ class Toolstack:
             if action == "start":
                 if self.is_locked() and vm["type"] == "user":
                     raise ToolstackError("Der Bildschirm ist gesperrt", 423)
+                if self.kvm_loaded():
+                    raise ToolstackError(
+                        "Die Virtualisierung der CPU (VT-x/AMD-V) ist durch das KVM-Kernelmodul belegt, "
+                        "VirtualBox kann so keine VM starten. Bitte VMBox neu starten; falls der Fehler "
+                        "bleibt, beim Booten „modprobe.blacklist=kvm,kvm_amd,kvm_intel“ anhängen.", 409)
                 if state == "paused":
                     self.vbox.control(uuid, "resume")
                 elif state in ("stopped", "saved"):
@@ -519,6 +526,8 @@ class Toolstack:
                            "resume": "resume", "reboot": "reset", "save": "savestate"}[action]
                 self.vbox.control(uuid, command)
                 if action in ("shutdown", "poweroff", "save"):
+                    # the window is about to disappear - do not re-attach one
+                    self._frontend_launched[uuid] = time.monotonic()
                     self._show_ui_if_focused(uuid)
             elif action == "switch":
                 self.switch_to(uuid)
@@ -581,18 +590,38 @@ class Toolstack:
             self.invalidate()
         return saved
 
-    def ensure_frontends(self, grace=20):
-        """Give every running user VM a window again, e.g. after the X session restarted."""
+    def ensure_frontends(self, grace=20, confirm=10):
+        """Give every running user VM a window again, e.g. after the X session restarted.
+
+        Careful: a VirtualBoxVM frontend started for a VM that is *not*
+        running would try to power it on.  So a window must be missing for
+        ``confirm`` seconds (the VM may just be shutting down or saving) and
+        VirtualBox - asked directly, not via the cache - must still report
+        the VM as running."""
         now = time.monotonic()
         for vm in self.list_vms():
+            uuid = vm["uuid"]
             if vm["type"] != "user" or not vm["running"]:
+                self._window_missing.pop(uuid, None)
                 continue
-            if now - self._frontend_launched.get(vm["uuid"], 0) < grace:
+            if now - self._frontend_launched.get(uuid, 0) < grace:
                 continue
-            if not self.display.has_window(vm["uuid"]):
-                log.info("re-attaching window for %s", vm["name"])
-                self._frontend_launched[vm["uuid"]] = now
-                self.display.launch_frontend(vm["uuid"])
+            if self.display.has_window(uuid):
+                self._window_missing.pop(uuid, None)
+                continue
+            if now - self._window_missing.setdefault(uuid, now) < confirm:
+                continue
+            self._window_missing.pop(uuid, None)
+            try:
+                state = self.vbox.vm_info(uuid).get("VMState")
+            except VBoxError:
+                continue
+            if state not in ("running", "paused"):
+                self.invalidate()
+                continue
+            log.info("re-attaching window for %s", vm["name"])
+            self._frontend_launched[uuid] = now
+            self.display.launch_frontend(uuid)
 
     # ------------------------------------------------------------------ #
     # switching

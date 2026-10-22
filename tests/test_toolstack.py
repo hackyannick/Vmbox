@@ -147,6 +147,49 @@ class ToolstackTest(unittest.TestCase):
         with self.assertRaises(ToolstackError):
             self.ts.action(vm["uuid"], "shutdown")
 
+    def test_start_refused_with_clear_message_when_kvm_is_loaded(self):
+        vm = self.create()
+        self.ts.kvm_loaded = lambda: True
+        with self.assertRaises(ToolstackError) as ctx:
+            self.ts.action(vm["uuid"], "start")
+        self.assertIn("KVM", str(ctx.exception))
+        self.assertEqual(self.ts.get_vm(vm["uuid"])["state"], "stopped")
+
+    def _frontend_setup(self):
+        launched = []
+        self.display.launch_frontend = launched.append
+        self.display.has_window = lambda uuid: False
+        clock = [1000.0]
+        import vmboxd.toolstack as tsmod
+        self._orig_monotonic = tsmod.time.monotonic
+        tsmod.time.monotonic = lambda: clock[0]
+        self.addCleanup(lambda: setattr(tsmod.time, "monotonic", self._orig_monotonic))
+        return launched, clock
+
+    def test_window_reattached_only_after_it_stays_missing(self):
+        vm = self.create()
+        self.ts.action(vm["uuid"], "start")
+        launched, clock = self._frontend_setup()
+        clock[0] += 25                       # start grace is over
+        self.ts.ensure_frontends()
+        self.assertEqual(launched, [])       # first miss: wait
+        clock[0] += 11
+        self.ts.ensure_frontends()
+        self.assertEqual(launched, [vm["uuid"]])
+
+    def test_no_window_for_a_vm_that_just_stopped(self):
+        vm = self.create()
+        self.ts.action(vm["uuid"], "start")
+        launched, clock = self._frontend_setup()
+        clock[0] += 25
+        self.ts.ensure_frontends()
+        # guest shuts itself down; our cached state still says "running"
+        self.fake.vms[vm["uuid"]]["info"]["VMState"] = "poweroff"
+        self.ts.cache_ttl = 3600
+        clock[0] += 11
+        self.ts.ensure_frontends()
+        self.assertEqual(launched, [])       # would otherwise power the VM on again
+
     def test_switch_cycle(self):
         a, b = self.create("A"), self.create("B")
         self.ts.action(a["uuid"], "start")

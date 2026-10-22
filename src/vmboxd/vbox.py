@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ class VBoxManage:
         self.binary = binary
         self.runner = runner or subprocess_runner
         self.gui_env = gui_env or {}
+        self.sleep = time.sleep
 
     # -- plumbing ---------------------------------------------------------
     def run(self, *args, env=None, timeout=120, check=True):
@@ -206,8 +208,18 @@ class VBoxManage:
     def start(self, uuid, headless=False):
         # "separate": the VM runs in its own headless process and the window is
         # only a detachable frontend - a crash of the X session does not kill VMs.
-        self.run("startvm", uuid, "--type", "headless" if headless else "separate",
-                 env=None if headless else self.gui_env, timeout=180)
+        # Right after modifyvm VirtualBox may still be releasing the session
+        # lock ("already locked by a session (or being locked or unlocked)").
+        for attempt in range(5):
+            try:
+                self.run("startvm", uuid, "--type", "headless" if headless else "separate",
+                         env=None if headless else self.gui_env, timeout=180)
+                return
+            except VBoxError as exc:
+                if "already locked" not in str(exc) or attempt == 4:
+                    raise
+                log.info("machine %s still locked, retrying start", uuid)
+                self.sleep(0.5 * (attempt + 1))
 
     def control(self, uuid, *args):
         self.run("controlvm", uuid, *args, timeout=300)

@@ -73,11 +73,14 @@ jobs:
                    /usr/lib/vmbox/vmboxd/server.py /usr/bin/vmbox-shell /usr/sbin/vmbox-installer \
                    /usr/share/vmbox/ui/index.html /etc/systemd/system/multi-user.target.wants/vmboxd.service \
                    /etc/systemd/system/multi-user.target.wants/vmbox-session.service /usr/bin/openbox /usr/bin/wmctrl \
-                   /usr/bin/udisksctl /usr/sbin/mkfs.exfat /usr/bin/ntfs-3g /usr/lib/vmbox/vmboxd/media.py; do
+                   /usr/bin/udisksctl /usr/sbin/mkfs.exfat /usr/bin/ntfs-3g /usr/lib/vmbox/vmboxd/media.py \
+                   /etc/modprobe.d/vmbox-no-kvm.conf; do
             if grep -q -- "$f\$" "$WORK/files.txt"; then echo "OK      $f"; else echo "FEHLT   $f"; FAIL=1; fi
           done
           grep -q "vmbox.install" "$WORK/grub.cfg" && echo "OK      GRUB-Eintrag 'VMBox installieren'" || { echo "FEHLT   GRUB-Eintrag"; FAIL=1; }
           grep -q "vmbox.install" "$WORK/live.cfg" && echo "OK      ISOLINUX-Eintrag 'VMBox installieren'" || { echo "FEHLT   ISOLINUX-Eintrag"; FAIL=1; }
+          grep -q "modprobe.blacklist=kvm" "$WORK/grub.cfg" && echo "OK      KVM beim Booten gesperrt (GRUB)" || { echo "FEHLT   KVM-Sperre (GRUB)"; FAIL=1; }
+          grep -q "modprobe.blacklist=kvm" "$WORK/live.cfg" && echo "OK      KVM beim Booten gesperrt (ISOLINUX)" || { echo "FEHLT   KVM-Sperre (ISOLINUX)"; FAIL=1; }
           grep -E "^menuentry" "$WORK/grub.cfg" || true
           exit ${FAIL:-0}
       - name: Build-Log (Ende)

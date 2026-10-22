@@ -9,7 +9,7 @@ from . import __version__, config
 from .auth import Auth
 from .display import VirtualDisplay, X11Display
 from .fakevbox import FakeVBoxManage
-from .host import FakeHost, Host
+from .host import FakeHost, Host, kvm_loaded
 from .media import FakeMedia, Media
 from .server import App, serve
 from .toolstack import Toolstack
@@ -37,7 +37,8 @@ def build_app(cfg):
         host = Host(cfg.state_dir, vbox.version, live=cfg.live)
         media = Media(cfg.iso_dir)
     os.makedirs(cfg.iso_dir, exist_ok=True)
-    toolstack = Toolstack(vbox, display, cfg.iso_dir)
+    toolstack = Toolstack(vbox, display, cfg.iso_dir,
+                          kvm_loaded=kvm_loaded if cfg.backend != "fake" else (lambda: False))
     auth = Auth(cfg.auth_file, cfg.session_timeout)
     auth.locked = True
     return App(cfg, toolstack, auth, host, media)

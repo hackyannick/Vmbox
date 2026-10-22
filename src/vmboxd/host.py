@@ -73,6 +73,11 @@ def _virt_extensions():
     return bool(re.search(r"\b(vmx|svm)\b", flags))
 
 
+def kvm_loaded():
+    """KVM grabs VT-x/AMD-V and VirtualBox then fails with VERR_SVM_IN_USE / VERR_VMX_IN_USE."""
+    return any(os.path.exists("/sys/module/" + m) for m in ("kvm_amd", "kvm_intel"))
+
+
 class Host:
     def __init__(self, state_dir, vbox_version=lambda: "", live=False):
         self.state_dir = state_dir
@@ -109,6 +114,7 @@ class Host:
             "tpm": os.path.exists("/sys/class/tpm/tpm0"),
             "encrypted": os.path.exists("/dev/mapper/vmbox-storage"),
             "secure_boot": self._secure_boot(),
+            "kvm_loaded": kvm_loaded(),
             "live": self.live,
             "time": int(time.time()),
         }

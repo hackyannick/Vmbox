@@ -26,5 +26,5 @@ lb config noauto \
     --iso-volume "VMBox ${VERSION}" \
     --hdd-label VMBOX \
     --checksums sha256 \
-    --bootappend-live "boot=live components quiet splash hostname=vmbox locales=de_DE.UTF-8 keyboard-layouts=de timezone=Europe/Berlin live-config.nocomponents=user-setup,sudo,login,xinit,openssh-server" \
+    --bootappend-live "boot=live components quiet splash modprobe.blacklist=kvm,kvm_amd,kvm_intel hostname=vmbox locales=de_DE.UTF-8 keyboard-layouts=de timezone=Europe/Berlin live-config.nocomponents=user-setup,sudo,login,xinit,openssh-server" \
     "${@}"

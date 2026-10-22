@@ -141,7 +141,7 @@ async function onLogin() {
 
 async function loadHost() {
   try { S.host = await api("GET", "/api/host"); } catch (e) { /* ignore */ }
-  if (S.page === "vms") renderStats();
+  if (S.page === "vms") renderPage();
   if (S.page === "system") renderPage(true);
 }
 setInterval(() => { if (S.state && S.state.authenticated) loadHost(); }, 15000);
@@ -331,6 +331,10 @@ function renderVMs() {
   let html = pageHead("Virtuelle Maschinen", "Jede Aufgabe in ihrer eigenen, isolierten Umgebung.",
     '<button class="btn" data-act="toggle-hidden">' + (S.showHidden ? "Ausgeblendete verbergen" : "Ausgeblendete zeigen") + "</button>" +
     '<button class="btn primary" data-act="new">' + icon("plus") + "Neue VM</button>");
+  if (S.host && S.host.kvm_loaded) {
+    html += '<div class="notice warn">Das KVM-Kernelmodul ist geladen und belegt die Virtualisierung der CPU – VirtualBox kann so keine VMs starten. ' +
+      "Bitte VMBox neu starten. Bleibt der Hinweis, im Boot-Menü mit „e“ an die linux-Zeile <b>modprobe.blacklist=kvm,kvm_amd,kvm_intel</b> anhängen.</div>";
+  }
   html += '<div class="stats" id="stats"></div>';
   html += '<div class="section-title">Arbeitsumgebungen</div><div class="vm-grid">' + user.map((v) => vmCard(v, v.uuid === focus)).join("") +
     '<div class="vm-card glass new" data-act="new"><div class="plus">' + icon("plus") + "</div><strong>Neue virtuelle Maschine</strong></div></div>";

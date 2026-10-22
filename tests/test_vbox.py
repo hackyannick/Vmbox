@@ -62,6 +62,21 @@ class VBoxManageTest(unittest.TestCase):
         self.assertEqual(devices[0]["product_id"], "5583")
         self.assertEqual(devices[0]["state"], "busy")
 
+    def test_start_retries_while_machine_is_unlocking(self):
+        uuid = self.vbox.create_vm("Test", "Linux_64")
+        original, failures = self.fake.cmd_startvm, [2]
+
+        def flaky(rest):
+            if failures[0]:
+                failures[0] -= 1
+                raise __import__("vmboxd.fakevbox", fromlist=["FakeError"]).FakeError(
+                    "The machine 'Test' is already locked by a session (or being locked or unlocked)")
+            return original(rest)
+        self.fake.cmd_startvm = flaky
+        self.vbox.sleep = lambda s: None
+        self.vbox.start(uuid)
+        self.assertEqual(self.vbox.running_vms(), {uuid})
+
     def test_start_uses_separate_frontend(self):
         uuid = self.vbox.create_vm("Test", "Linux_64")
         self.vbox.start(uuid)

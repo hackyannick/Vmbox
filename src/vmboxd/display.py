@@ -105,7 +105,7 @@ class X11Display:
 
     def launch_frontend(self, uuid):
         """(Re)attach a VirtualBox window to an already running VM."""
-        proc = subprocess.Popen(["VirtualBoxVM", "--startvm", uuid, "--separate"], env=self.env,
+        proc = subprocess.Popen(["VirtualBoxVM", "--startvm", uuid, "--separate", "--no-startvm-errormsgbox"], env=self.env,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL, start_new_session=True)
         self._children = [p for p in getattr(self, "_children", []) if p.poll() is None] + [proc]

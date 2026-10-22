@@ -82,6 +82,9 @@ nicht wegkonfigurieren lassen:
    Passphrase für die Verschlüsselung, optional TPM-Entsperrung und dem
    Dashboard-Passwort. Danach Neustart – fertig.
 
+Das KVM-Kernelmodul ist in VMBox gesperrt: Es würde VT-x/AMD-V belegen, und
+VirtualBox könnte dann keine VM starten („VERR_SVM_IN_USE“/„VERR_VMX_IN_USE“).
+
 **Voraussetzungen:** x86-64-CPU mit VT-x/AMD-V (im BIOS aktiviert),
 mindestens 8 GB RAM (16 GB empfohlen), 48 GB Festplatte, UEFI oder BIOS.
 Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung

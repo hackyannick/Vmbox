@@ -292,7 +292,7 @@ EOF
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=2
 GRUB_DISTRIBUTOR="VMBox"
-GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet modprobe.blacklist=kvm,kvm_amd,kvm_intel"
 GRUB_CMDLINE_LINUX=""
 GRUB_GFXMODE=auto
 GRUB_BACKGROUND=/usr/share/vmbox/artwork/grub.png
