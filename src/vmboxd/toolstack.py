@@ -25,6 +25,22 @@ CLIPBOARD_MODES = {
     "both": "bidirectional",
 }
 NAME_RE = re.compile(r"^[\w][\w .()+-]{0,63}$", re.UNICODE)
+# VirtualBox CPU profiles presented to old Windows guests, by host CPU vendor.
+LEGACY_CPU_PROFILES = {"amd": "AMD Ryzen 7 1800X Eight-Core", "intel": "Intel Core i7-6700K"}
+
+
+def host_cpu_vendor():
+    try:
+        with open("/proc/cpuinfo") as fh:
+            for line in fh:
+                if line.startswith("vendor_id"):
+                    vendor = line.split(":", 1)[1].strip()
+                    return "intel" if vendor == "GenuineIntel" else "amd"
+    except OSError:
+        pass
+    return "intel"
+
+
 # Shipped by the Oracle VirtualBox package.
 GUEST_ADDITIONS_PATHS = ("/usr/share/virtualbox/VBoxGuestAdditions.iso",
                          "/usr/lib/virtualbox/additions/VBoxGuestAdditions.iso")
@@ -81,8 +97,9 @@ def _flag(value):
 
 class Toolstack:
     def __init__(self, vbox, display, iso_dir, cache_ttl=1.5, kvm_loaded=lambda: False,
-                 guest_additions_paths=GUEST_ADDITIONS_PATHS):
+                 guest_additions_paths=GUEST_ADDITIONS_PATHS, cpu_vendor=host_cpu_vendor):
         self.vbox = vbox
+        self.cpu_vendor = cpu_vendor
         self.guest_additions_paths = guest_additions_paths
         self.kvm_loaded = kvm_loaded
         self.display = display
@@ -146,6 +163,7 @@ class Toolstack:
             "cpus": int(info.get("cpus", 1) or 1),
             "firmware": info.get("firmware", "BIOS").lower(),
             "accelerate3d": info.get("accelerate3d", "off") == "on",
+            "cpu_profile": x("CPUProfile", ""),
             "vram": int(info.get("vram", 0) or 0),
             "network": network,
             "disk": "" if disk in ("none", "emptydrive") else disk,
@@ -333,6 +351,7 @@ class Toolstack:
                 )
                 if template.get("tpm"):
                     self.vbox.modify(uuid, "--tpm-type", "2.0")
+                self._apply_cpu_profile(uuid, template["id"])
                 cfg = self.vbox.vm_info(uuid).get("CfgFile", "")
                 vm_dir = os.path.dirname(cfg) if cfg else os.path.join(os.path.dirname(self.iso_dir), "vms", name)
                 disk = os.path.join(vm_dir, "%s.vdi" % name)
@@ -507,9 +526,28 @@ class Toolstack:
     # ------------------------------------------------------------------ #
     # lifecycle
     # ------------------------------------------------------------------ #
+    def _legacy_cpu_profile(self, template_id):
+        if TEMPLATES.get(template_id, {}).get("cpu_profile") != "legacy":
+            return None
+        return LEGACY_CPU_PROFILES.get(self.cpu_vendor(), LEGACY_CPU_PROFILES["intel"])
+
+    def _apply_cpu_profile(self, uuid, template_id):
+        profile = self._legacy_cpu_profile(template_id)
+        if not profile:
+            return
+        try:
+            self.vbox.modify(uuid, "--cpu-profile", profile, "--pae", "on")
+            self.vbox.set_extradata(uuid, P + "CPUProfile", profile)
+        except VBoxError as exc:
+            # never block a VM because of the profile - it then simply uses the host CPU
+            log.warning("could not set CPU profile %r on %s: %s", profile, uuid, exc)
+
     def _enforce(self, vm):
         """Re-apply hardening and policy before every start, in case somebody
         changed the machine behind our back with VBoxManage."""
+        if not vm["cpu_profile"] and self._legacy_cpu_profile(vm["template"]):
+            # VMs created before the legacy CPU profile existed get it now.
+            self._apply_cpu_profile(vm["uuid"], vm["template"])
         args = self._hardening_args() + self._policy_args(vm["policy"], self._usb_kind(vm["template"]))
         if vm["network"] == "nat":
             args += ["--nat-localhostreachable1", "off"]

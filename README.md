@@ -119,6 +119,11 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   bzw. *Hardware → Gasterweiterungen einlegen* ins virtuelle DVD-Laufwerk ein,
   auch im laufenden Betrieb (`vmbox-ctl guest-additions <vm>`). Danach im Gast
   `VBoxWindowsAdditions.exe` bzw. `VBoxLinuxAdditions.run` starten.
+* **CPU-Profil für altes Windows:** Windows 7, XP und 2000 sehen statt der
+  echten CPU eine ältere, bekannte (AMD Ryzen 7 1800X bzw. Intel Core
+  i7-6700K, je nach Host). Sonst bricht Windows 7 auf aktuellen Prozessoren
+  mit dem Bluescreen „UNSUPPORTED_PROCESSOR“ ab. Bereits angelegte VMs
+  bekommen das Profil beim nächsten Start aus dem ausgeschalteten Zustand.
 * **Windows XP und 2000** bekommen zeitgemäße Hardware, für die sie Treiber
   mitbringen: IDE-Controller, PCnet-FAST-III-Netzwerkkarte, AC'97-Ton,
   PS/2-Maus und VBoxVGA (ohne 3D). Weil es keine Sicherheitsupdates mehr gibt,

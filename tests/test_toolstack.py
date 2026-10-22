@@ -79,6 +79,25 @@ class ToolstackTest(unittest.TestCase):
             self.ts.update_vm(vm["uuid"], {"iso": "xp.iso"})
             self.assertTrue(self.ts.get_vm(vm["uuid"])["iso"].endswith("xp.iso"))
 
+    def test_old_windows_get_a_cpu_profile_matching_the_host_vendor(self):
+        for vendor, profile in (("amd", "AMD Ryzen 7 1800X Eight-Core"), ("intel", "Intel Core i7-6700K")):
+            self.ts.cpu_vendor = lambda v=vendor: v
+            vm = self.create("Win7-" + vendor, template="windows7")
+            info = self.vbox.vm_info(vm["uuid"])
+            self.assertEqual((info["cpuprofile"], info["pae"]), (profile, "on"))
+            self.assertEqual(vm["cpu_profile"], profile)
+        modern = self.create("Win11", template="windows11")
+        self.assertNotIn("cpuprofile", self.vbox.vm_info(modern["uuid"]))
+
+    def test_existing_windows7_vm_gets_cpu_profile_on_next_start(self):
+        self.ts.cpu_vendor = lambda: "amd"
+        vm = self.create("Win7", template="windows7")
+        # simulate a VM created by an older VMBox version without the profile
+        self.vbox.set_extradata(vm["uuid"], "VMBox/CPUProfile", None)
+        self.vbox.modify(vm["uuid"], "--cpu-profile", "host")
+        self.ts.action(vm["uuid"], "start")
+        self.assertEqual(self.vbox.vm_info(vm["uuid"])["cpuprofile"], "AMD Ryzen 7 1800X Eight-Core")
+
     def test_3d_can_be_toggled_while_stopped(self):
         vm = self.create(template="linux")
         self.assertTrue(vm["accelerate3d"])

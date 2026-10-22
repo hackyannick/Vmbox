@@ -576,7 +576,7 @@ async function renderDrawer() {
       (d.policy.cd ? '<button type="button" class="btn" id="vm-ga" style="margin-bottom:8px">' + icon("disc") + "Gasterweiterungen einlegen</button>" +
         '<p class="hint" style="font-size:12.5px;color:var(--text-muted);margin:0 0 12px">Für automatische Auflösung, 3D-Beschleunigung, Maus-Integration und Zwischenablage. ' + esc(guestAdditionsHint(vm)) + "</p>" : "") +
       '<dl class="kv" style="margin:18px 0"><dt>Festplatte</dt><dd>' + esc(vm.disk || "–") + "</dd><dt>Firmware</dt><dd>" + esc(vm.firmware.toUpperCase()) +
-      "</dd><dt>Grafikspeicher</dt><dd>" + vm.vram + " MB</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
+      "</dd><dt>CPU-Profil</dt><dd>" + esc(vm.cpu_profile || "wie Host") + "</dd><dt>Grafikspeicher</dt><dd>" + vm.vram + " MB</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
       switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off || isLegacy(vm))) +
       switchRow("Wegwerf-Modus", "Alle Änderungen an der Festplatte werden beim Ausschalten verworfen (unveränderliches Abbild).", toggle("disposable", d.disposable, !off));
   } else if (tab === "policy") {

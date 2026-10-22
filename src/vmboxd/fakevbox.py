@@ -177,7 +177,7 @@ class FakeVBoxManage:
         "--graphicscontroller": "graphicscontroller", "--vram": "vram", "--drag-and-drop": "draganddrop",
         "--accelerate-3d": "accelerate3d", "--nictype1": "nictype1",
         "--usb-ehci": "ehci", "--usb-ohci": "usb", "--audio-controller": "audiocontroller",
-        "--mouse": "mouse", "--ioapic": "ioapic",
+        "--mouse": "mouse", "--ioapic": "ioapic", "--cpu-profile": "cpuprofile", "--pae": "pae",
     }
 
     def cmd_modifyvm(self, rest):

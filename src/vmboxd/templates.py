@@ -8,6 +8,10 @@ Windows XP and 2000 need period hardware they ship drivers for: an IDE
 controller (no AHCI driver), the PCnet-FAST III network card, AC'97 sound,
 a PS/2 mouse and the legacy VBoxVGA adapter (no 3D).  As they no longer get
 security updates they start without network by default.
+
+``cpu_profile: legacy`` shows these old systems an older, well-known CPU
+instead of the host CPU: Windows 7 stops with the blue screen
+UNSUPPORTED_PROCESSOR (0x5D) on current processors otherwise.
 """
 
 TEMPLATES = [
@@ -17,14 +21,14 @@ TEMPLATES = [
     {"id": "windows10", "label": "Windows 10", "ostype": "Windows10_64", "memory": 4096, "cpus": 2,
      "disk_gb": 64, "firmware": "efi", "tpm": False, "secure_boot": False, "graphics": "vboxsvga", "vram": 256,
      "accelerate3d": True, "usb": "xhci", "nic": "82540EM", "family": "windows"},
-    {"id": "windows7", "label": "Windows 7", "ostype": "Windows7_64", "memory": 4096, "cpus": 2,
+    {"id": "windows7", "cpu_profile": "legacy", "label": "Windows 7", "ostype": "Windows7_64", "memory": 4096, "cpus": 2,
      "disk_gb": 50, "firmware": "bios", "tpm": False, "secure_boot": False, "graphics": "vboxsvga", "vram": 256,
      "accelerate3d": True, "usb": "ehci", "nic": "82540EM", "family": "windows"},
-    {"id": "windowsxp", "label": "Windows XP", "ostype": "WindowsXP", "memory": 1024, "cpus": 1,
+    {"id": "windowsxp", "cpu_profile": "legacy", "label": "Windows XP", "ostype": "WindowsXP", "memory": 1024, "cpus": 1,
      "disk_gb": 20, "firmware": "bios", "tpm": False, "secure_boot": False, "graphics": "vboxvga", "vram": 64,
      "accelerate3d": False, "usb": "ehci", "nic": "Am79C973", "storage": "ide", "audio": "ac97",
      "mouse": "ps2", "network": "none", "legacy": True, "family": "windows"},
-    {"id": "windows2000", "label": "Windows 2000", "ostype": "Windows2000", "memory": 512, "cpus": 1,
+    {"id": "windows2000", "cpu_profile": "legacy", "label": "Windows 2000", "ostype": "Windows2000", "memory": 512, "cpus": 1,
      "disk_gb": 10, "firmware": "bios", "tpm": False, "secure_boot": False, "graphics": "vboxvga", "vram": 32,
      "accelerate3d": False, "usb": "ehci", "nic": "Am79C973", "storage": "ide", "audio": "ac97",
      "mouse": "ps2", "ioapic": False, "network": "none", "legacy": True, "family": "windows"},
