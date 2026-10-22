@@ -140,6 +140,10 @@ class FakeVBoxManage:
         if what == "intnets":
             nets = {vm["info"].get("intnet1") for vm in self.vms.values()} - {None}
             return "".join("Name:        %s\n\n" % n for n in sorted(nets))
+        if what == "cpu-profiles":
+            return "".join("Name:        %s\nFull Name:   %s\n\n" % (n, n) for n in (
+                "host", "AMD Ryzen 7 1800X Eight-Core", "AMD FX-8150 Eight-Core", "Intel Core i7-6700K",
+                "Intel Core i5-3570", "Intel Pentium 4 3.00GHz"))
         if what == "hostinfo":
             return "Processor count: 8\nMemory size: 32000 MByte\n"
         raise FakeError("unknown list %s" % what)
@@ -178,6 +182,7 @@ class FakeVBoxManage:
         "--accelerate-3d": "accelerate3d", "--nictype1": "nictype1",
         "--usb-ehci": "ehci", "--usb-ohci": "usb", "--audio-controller": "audiocontroller",
         "--mouse": "mouse", "--ioapic": "ioapic", "--cpu-profile": "cpuprofile", "--pae": "pae",
+        "--spec-ctrl": "specctrl",
     }
 
     def cmd_modifyvm(self, rest):

@@ -98,6 +98,32 @@ class ToolstackTest(unittest.TestCase):
         self.ts.action(vm["uuid"], "start")
         self.assertEqual(self.vbox.vm_info(vm["uuid"])["cpuprofile"], "AMD Ryzen 7 1800X Eight-Core")
 
+    def test_cpu_profile_and_spec_ctrl_can_be_chosen(self):
+        self.ts.cpu_vendor = lambda: "amd"
+        vm = self.create("Win7", template="windows7")
+        self.assertIn("Intel Core i5-3570", self.ts.cpu_profiles())
+        vm = self.ts.update_vm(vm["uuid"], {"cpu_profile": "Intel Core i5-3570", "spec_ctrl": True})
+        info = self.vbox.vm_info(vm["uuid"])
+        self.assertEqual((info["cpuprofile"], info["specctrl"]), ("Intel Core i5-3570", "on"))
+        self.assertEqual((vm["cpu_profile"], vm["spec_ctrl"]), ("Intel Core i5-3570", True))
+        with self.assertRaises(ToolstackError):
+            self.ts.update_vm(vm["uuid"], {"cpu_profile": "Erfundene CPU"})
+        # "host" is a deliberate choice: the legacy default must not overwrite it on start
+        self.ts.update_vm(vm["uuid"], {"cpu_profile": "host"})
+        self.ts.action(vm["uuid"], "start")
+        self.assertEqual(self.vbox.vm_info(vm["uuid"])["cpuprofile"], "host")
+        with self.assertRaises(ToolstackError):
+            self.ts.update_vm(vm["uuid"], {"spec_ctrl": False})   # running
+
+    def test_discard_saved_state(self):
+        vm = self.create()
+        self.ts.action(vm["uuid"], "start")
+        self.ts.action(vm["uuid"], "save")
+        self.ts.action(vm["uuid"], "discard")
+        self.assertEqual(self.ts.get_vm(vm["uuid"])["state"], "stopped")
+        with self.assertRaises(ToolstackError):
+            self.ts.action(vm["uuid"], "discard")
+
     def test_3d_can_be_toggled_while_stopped(self):
         vm = self.create(template="linux")
         self.assertTrue(vm["accelerate3d"])

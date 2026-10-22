@@ -24,6 +24,7 @@ const S = {
   isos: [],
   networks: [],
   usb: [],
+  cpuProfiles: [],
   media: { devices: [], jobs: [] },
   mediaIsos: {},
   wifi: null,
@@ -528,6 +529,7 @@ async function openDrawer(uuid) {
   try {
     S.isos = (await api("GET", "/api/isos")).isos;
     S.networks = (await api("GET", "/api/networks")).networks;
+    S.cpuProfiles = (await api("GET", "/api/cpu-profiles")).profiles.filter((p) => p !== "host");
   } catch (e) { /* ignore */ }
   renderDrawer();
 }
@@ -553,7 +555,8 @@ async function renderDrawer() {
   const tab = S.drawerTab;
   let body = "";
   if (!off && ["general", "hardware", "policy"].includes(tab)) {
-    body += '<div class="notice warn">Die VM ist ' + STATE_LABEL[vm.state].toLowerCase() + ". Hardware und Richtlinien können nur bei ausgeschalteter VM geändert werden.</div>";
+    body += '<div class="notice warn">Die VM ist ' + STATE_LABEL[vm.state].toLowerCase() + ". Hardware und Richtlinien können nur bei ausgeschalteter VM geändert werden." +
+      (vm.state === "saved" ? ' <button type="button" class="btn small danger" id="vm-discard" style="margin-top:8px">Gespeicherten Zustand verwerfen</button>' : "") + "</div>";
   }
   if (tab === "general") {
     body += '<div class="field"><label>Name</label><input class="input" data-field="name" maxlength="64" value="' + esc(d.name) + '" ' + (off ? "" : "disabled") + "></div>" +
@@ -576,7 +579,12 @@ async function renderDrawer() {
       (d.policy.cd ? '<button type="button" class="btn" id="vm-ga" style="margin-bottom:8px">' + icon("disc") + "Gasterweiterungen einlegen</button>" +
         '<p class="hint" style="font-size:12.5px;color:var(--text-muted);margin:0 0 12px">Für automatische Auflösung, 3D-Beschleunigung, Maus-Integration und Zwischenablage. ' + esc(guestAdditionsHint(vm)) + "</p>" : "") +
       '<dl class="kv" style="margin:18px 0"><dt>Festplatte</dt><dd>' + esc(vm.disk || "–") + "</dd><dt>Firmware</dt><dd>" + esc(vm.firmware.toUpperCase()) +
-      "</dd><dt>CPU-Profil</dt><dd>" + esc(vm.cpu_profile || "wie Host") + "</dd><dt>Grafikspeicher</dt><dd>" + vm.vram + " MB</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
+      "</dd><dt>Grafikspeicher</dt><dd>" + vm.vram + " MB</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
+      '<div class="field" style="margin-top:16px"><label>CPU-Profil (welche CPU der Gast sieht)</label><select class="input" data-field="cpu_profile" ' + (off ? "" : "disabled") + ">" +
+      ['<option value="host">Wie Host (' + esc((S.host && S.host.cpu) || "echte CPU") + ")</option>"].concat(
+        S.cpuProfiles.map((p) => '<option ' + ((d.cpu_profile || "host") === p ? "selected" : "") + ">" + esc(p) + "</option>")).join("") +
+      '</select><span class="hint">Ältere Windows-Versionen (7, XP, 2000) brauchen ein älteres Profil, sonst Bluescreen „UNSUPPORTED_PROCESSOR“.</span></div>' +
+      switchRow("Spectre-Schutz an den Gast weitergeben", "Gibt IBRS/IBPB (Spectre-Abwehr der CPU) an das Gastsystem weiter. Bei Bluescreen 0x5D mit „IBRS“ (0x53524249) unter Windows 7 hier umschalten.", toggle("spec_ctrl", d.spec_ctrl, !off)) +
       switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off || isLegacy(vm))) +
       switchRow("Wegwerf-Modus", "Alle Änderungen an der Festplatte werden beim Ausschalten verworfen (unveränderliches Abbild).", toggle("disposable", d.disposable, !off));
   } else if (tab === "policy") {
@@ -634,6 +642,11 @@ $("#overlay").addEventListener("click", async (ev) => {
   else if (colBtn) { S.draft.color = colBtn.dataset.color; $$(".drawer [data-color]").forEach((b) => b.classList.toggle("active", b === colBtn)); }
   else if (clipBtn) { S.draft.policy.clipboard = clipBtn.dataset.clip; $$("[data-clip]").forEach((b) => b.classList.toggle("active", b === clipBtn)); }
   else if (ev.target.closest("#vm-save")) saveDrawer(vm);
+  else if (ev.target.closest("#vm-discard")) {
+    if (await confirmBox("Gespeicherten Zustand verwerfen?", "„" + vm.name + "“ startet danach neu wie nach dem Ausschalten. Nicht gesicherte Arbeit in der VM geht verloren.", "Verwerfen", true)) {
+      await run(api("POST", "/api/vms/" + vm.uuid + "/discard"), "Zustand verworfen").catch(() => {});
+    }
+  }
   else if (ev.target.closest("#vm-ga")) {
     if (await insertGuestAdditions(vm)) {
       S.draft.iso = "@guest-additions";
@@ -664,10 +677,11 @@ $("#overlay").addEventListener("submit", (ev) => {
 async function saveDrawer(vm) {
   const d = S.draft;
   const changes = {};
-  for (const key of ["name", "description", "color", "start_on_boot", "hidden", "network", "disposable", "type", "accelerate3d"]) {
+  for (const key of ["name", "description", "color", "start_on_boot", "hidden", "network", "disposable", "type", "accelerate3d", "spec_ctrl"]) {
     if (d[key] !== vm[key]) changes[key] = d[key];
   }
   if (+d.slot !== vm.slot) changes.slot = +d.slot;
+  if ((d.cpu_profile || "host") !== (vm.cpu_profile || "host")) changes.cpu_profile = d.cpu_profile;
   if (+d.memory !== vm.memory) changes.memory = +d.memory;
   if (+d.cpus !== vm.cpus) changes.cpus = +d.cpus;
   if (JSON.stringify(d.policy) !== JSON.stringify(vm.policy)) changes.policy = d.policy;

@@ -164,6 +164,7 @@ class Toolstack:
             "firmware": info.get("firmware", "BIOS").lower(),
             "accelerate3d": info.get("accelerate3d", "off") == "on",
             "cpu_profile": x("CPUProfile", ""),
+            "spec_ctrl": _bool(x("SpecCtrl")),
             "vram": int(info.get("vram", 0) or 0),
             "network": network,
             "disk": "" if disk in ("none", "emptydrive") else disk,
@@ -415,6 +416,18 @@ class Toolstack:
                 if not 1 <= int(changes["cpus"]) <= 64:
                     raise ToolstackError("Ungültige Anzahl an CPUs")
                 modify += ["--cpus", int(changes["cpus"])]
+            if "cpu_profile" in changes and (changes["cpu_profile"] or "host") != (vm["cpu_profile"] or "host"):
+                needs_stop("Das CPU-Profil")
+                profile = str(changes["cpu_profile"] or "host")
+                if profile != "host" and profile not in self.cpu_profiles():
+                    raise ToolstackError("Unbekanntes CPU-Profil: %s" % profile)
+                modify += ["--cpu-profile", profile]
+                # "host" is stored explicitly so the legacy default is not re-applied
+                meta["CPUProfile"] = profile
+            if "spec_ctrl" in changes and bool(changes["spec_ctrl"]) != vm["spec_ctrl"]:
+                needs_stop("Der Spectre-Schutz")
+                modify += ["--spec-ctrl", "on" if changes["spec_ctrl"] else "off"]
+                meta["SpecCtrl"] = _flag(changes["spec_ctrl"])
             if "accelerate3d" in changes and bool(changes["accelerate3d"]) != vm["accelerate3d"]:
                 needs_stop("Die 3D-Beschleunigung")
                 if changes["accelerate3d"] and TEMPLATES.get(vm["template"], {}).get("legacy"):
@@ -593,6 +606,10 @@ class Toolstack:
                     # the window is about to disappear - do not re-attach one
                     self._frontend_launched[uuid] = time.monotonic()
                     self._show_ui_if_focused(uuid)
+            elif action == "discard":
+                if state != "saved":
+                    raise ToolstackError("Die VM hat keinen gespeicherten Zustand", 409)
+                self.vbox.run("discardstate", uuid)
             elif action == "switch":
                 self.switch_to(uuid)
             else:
@@ -859,6 +876,14 @@ class Toolstack:
     # ------------------------------------------------------------------ #
     # networks & media
     # ------------------------------------------------------------------ #
+    def cpu_profiles(self):
+        try:
+            names = self.vbox.cpu_profiles()
+        except VBoxError as exc:
+            log.warning("could not list CPU profiles: %s", exc)
+            names = []
+        return names or sorted(set(LEGACY_CPU_PROFILES.values()))
+
     def networks(self):
         options = [{"id": "nat", "label": "NAT (isoliert, empfohlen)"},
                    {"id": "none", "label": "Kein Netzwerk"}]

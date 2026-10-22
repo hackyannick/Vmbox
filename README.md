@@ -124,6 +124,10 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   i7-6700K, je nach Host). Sonst bricht Windows 7 auf aktuellen Prozessoren
   mit dem Bluescreen „UNSUPPORTED_PROCESSOR“ ab. Bereits angelegte VMs
   bekommen das Profil beim nächsten Start aus dem ausgeschalteten Zustand.
+  Unter *Hardware* lassen sich das CPU-Profil (alle Profile, die VirtualBox
+  kennt) und die Weitergabe des Spectre-Schutzes (IBRS/IBPB) frei wählen.
+  Bluescreen `0x5D` mit erstem Parameter `0x53524249` („IBRS“) betrifft die
+  Spectre-Schutzfunktionen – dann diese beiden Einstellungen ausprobieren.
 * **Windows XP und 2000** bekommen zeitgemäße Hardware, für die sie Treiber
   mitbringen: IDE-Controller, PCnet-FAST-III-Netzwerkkarte, AC'97-Ton,
   PS/2-Maus und VBoxVGA (ohne 3D). Weil es keine Sicherheitsupdates mehr gibt,

@@ -386,7 +386,7 @@ def api_delete_vm(h, uuid):
     h._json(200, {"ok": True})
 
 
-@route("POST", r"/api/vms/([^/]+)/(start|shutdown|poweroff|pause|resume|reboot|save|switch)")
+@route("POST", r"/api/vms/([^/]+)/(start|shutdown|poweroff|pause|resume|reboot|save|discard|switch)")
 def api_vm_action(h, ref, action):
     vm = h.app.toolstack.find_vm(urllib.parse.unquote(ref))
     h.app.toolstack.action(vm["uuid"], action)
@@ -479,6 +479,11 @@ def api_usb_sticky(h, dev):
 # ---------------------------------------------------------------------- #
 # networks, media, host
 # ---------------------------------------------------------------------- #
+@route("GET", r"/api/cpu-profiles")
+def api_cpu_profiles(h):
+    h._json(200, {"profiles": h.app.toolstack.cpu_profiles()})
+
+
 @route("GET", r"/api/networks")
 def api_networks(h):
     h._json(200, {"networks": h.app.toolstack.networks()})

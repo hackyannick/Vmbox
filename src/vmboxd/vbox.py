@@ -276,6 +276,10 @@ class VBoxManage:
             if b.get("Name")
         ]
 
+    def cpu_profiles(self):
+        """Names of the CPU profiles this VirtualBox can present to a guest."""
+        return [b["Name"] for b in parse_blocks(self.run("list", "cpu-profiles")) if b.get("Name")]
+
     def internal_networks(self):
         nets = []
         for line in self.run("list", "intnets").splitlines():
