@@ -25,6 +25,10 @@ CLIPBOARD_MODES = {
     "both": "bidirectional",
 }
 NAME_RE = re.compile(r"^[\w][\w .()+-]{0,63}$", re.UNICODE)
+# Shipped by the Oracle VirtualBox package.
+GUEST_ADDITIONS_PATHS = ("/usr/share/virtualbox/VBoxGuestAdditions.iso",
+                         "/usr/lib/virtualbox/additions/VBoxGuestAdditions.iso")
+GUEST_ADDITIONS = "@guest-additions"
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 USB_ID_RE = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
 # Storage controllers by template "storage" type: (name, bus, chipset, ports)
@@ -76,8 +80,10 @@ def _flag(value):
 
 
 class Toolstack:
-    def __init__(self, vbox, display, iso_dir, cache_ttl=1.5, kvm_loaded=lambda: False):
+    def __init__(self, vbox, display, iso_dir, cache_ttl=1.5, kvm_loaded=lambda: False,
+                 guest_additions_paths=GUEST_ADDITIONS_PATHS):
         self.vbox = vbox
+        self.guest_additions_paths = guest_additions_paths
         self.kvm_loaded = kvm_loaded
         self.display = display
         self.iso_dir = iso_dir
@@ -144,6 +150,7 @@ class Toolstack:
             "network": network,
             "disk": "" if disk in ("none", "emptydrive") else disk,
             "iso": "" if dvd in ("none", "emptydrive") else dvd,
+            "guest_additions_inserted": bool(self.guest_additions_iso) and dvd == self.guest_additions_iso,
             "policy": {
                 "usb": _bool(x("Policy/USB"), True),
                 "cd": _bool(x("Policy/CD"), True),
@@ -221,9 +228,20 @@ class Toolstack:
                 return slot
         return 0
 
+    @property
+    def guest_additions_iso(self):
+        for path in self.guest_additions_paths:
+            if os.path.isfile(path):
+                return path
+        return None
+
     def _resolve_iso(self, iso):
         if not iso:
             return ""
+        if iso == GUEST_ADDITIONS:
+            if not self.guest_additions_iso:
+                raise ToolstackError("Das Gasterweiterungen-Abbild ist auf diesem System nicht vorhanden", 404)
+            return self.guest_additions_iso
         path = iso if os.path.isabs(iso) else os.path.join(self.iso_dir, iso)
         path = os.path.realpath(path)
         if not path.startswith(os.path.realpath(self.iso_dir) + os.sep) or not os.path.isfile(path):
@@ -455,6 +473,14 @@ class Toolstack:
                 self.vbox.set_extradata(uuid, P + key, value)
             self.invalidate()
         return self.get_vm(uuid)
+
+    def insert_guest_additions(self, uuid):
+        """Insert VBoxGuestAdditions.iso into the VM's DVD drive (also while it runs)."""
+        vm = self.get_vm(uuid)
+        if not vm["policy"]["cd"]:
+            raise ToolstackError("CD/DVD ist für diese VM per Richtlinie deaktiviert – "
+                                 "unter „Netzwerk & Richtlinien“ einschalten", 403)
+        return self.update_vm(uuid, {"iso": GUEST_ADDITIONS})
 
     def _live_network(self, uuid, network):
         kind, _, arg = network.partition(":")

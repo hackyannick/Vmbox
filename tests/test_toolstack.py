@@ -190,6 +190,30 @@ class ToolstackTest(unittest.TestCase):
         self.ts.ensure_frontends()
         self.assertEqual(launched, [])       # would otherwise power the VM on again
 
+    def test_guest_additions_can_be_inserted_into_a_running_vm(self):
+        ga = os.path.join(self.tmp.name, "VBoxGuestAdditions.iso")
+        open(ga, "w").close()
+        self.ts.guest_additions_paths = (ga,)
+        vm = self.create(template="windows7")
+        self.ts.action(vm["uuid"], "start")
+        vm = self.ts.insert_guest_additions(vm["uuid"])
+        self.assertEqual(vm["iso"], ga)
+        self.assertTrue(vm["guest_additions_inserted"])
+        # and ejected again via the normal ISO field
+        vm = self.ts.update_vm(vm["uuid"], {"iso": ""})
+        self.assertFalse(vm["guest_additions_inserted"])
+
+    def test_guest_additions_respect_cd_policy_and_availability(self):
+        vm = self.create(policy={"cd": False})
+        with self.assertRaises(ToolstackError) as ctx:
+            self.ts.insert_guest_additions(vm["uuid"])
+        self.assertEqual(ctx.exception.status, 403)
+        other = self.create("B")
+        self.ts.guest_additions_paths = (os.path.join(self.tmp.name, "missing.iso"),)
+        with self.assertRaises(ToolstackError) as ctx:
+            self.ts.insert_guest_additions(other["uuid"])
+        self.assertEqual(ctx.exception.status, 404)
+
     def test_switch_cycle(self):
         a, b = self.create("A"), self.create("B")
         self.ts.action(a["uuid"], "start")

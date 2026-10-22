@@ -51,6 +51,11 @@ def cmd_action(args):
     call("POST", vm_path(args.vm) + "/" + args.action)
 
 
+def cmd_guest_additions(args):
+    call("POST", vm_path(args.vm) + "/guest-additions")
+    print("Gasterweiterungen eingelegt")
+
+
 def cmd_switch(args):
     target = args.target
     if target in ("ui", "next", "prev"):
@@ -114,6 +119,9 @@ def main():
         p = sub.add_parser(action, help="VM: %s" % action)
         p.add_argument("vm", help="Name, Slot oder UUID")
         p.set_defaults(func=cmd_action, action=action)
+    p = sub.add_parser("guest-additions", help="Gasterweiterungen ins DVD-Laufwerk einlegen")
+    p.add_argument("vm", help="Name, Slot oder UUID")
+    p.set_defaults(func=cmd_guest_additions)
     p = sub.add_parser("switch", help="Anzeige umschalten: ui | next | prev | slot N | <vm>")
     p.add_argument("target")
     p.add_argument("slot", nargs="?", type=int)

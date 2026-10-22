@@ -302,6 +302,7 @@ function vmCard(vm, focus) {
   } else if (st === "running") {
     actions = (vm.type === "user" ? '<button class="btn primary small" data-act="switch">' + icon("monitor") + "Anzeigen</button>" : "") +
       '<button class="btn small icon-only" title="Pausieren" data-act="pause">' + icon("pause") + "</button>" +
+      (vm.type === "user" && vm.policy.cd ? '<button class="btn small icon-only" title="Gasterweiterungen einlegen" data-act="guest-additions">' + icon("disc") + "</button>" : "") +
       '<button class="btn small icon-only" title="Ausschalten …" data-act="power">' + icon("power") + "</button>";
   } else if (st === "paused") {
     actions = '<button class="btn primary small" data-act="resume">' + icon("play") + "Fortsetzen</button>" +
@@ -359,9 +360,30 @@ $("#main").addEventListener("click", async (ev) => {
       el.disabled = true;
       return run(api("POST", "/api/vms/" + uuid + "/" + act)).catch(() => {}).finally(() => { el.disabled = false; });
     case "power": return powerDialog(vm);
+    case "guest-additions": return insertGuestAdditions(vm);
     default: return pageAction(act, el);
   }
 });
+
+function guestAdditionsHint(vm) {
+  if ((vm.ostype || "").startsWith("Windows")) {
+    return "Im Gast das CD-Laufwerk öffnen und VBoxWindowsAdditions.exe starten" +
+      (isLegacy(vm) ? " (Windows XP/2000 benötigen ggf. eine ältere Version der Gasterweiterungen)" : "") + ".";
+  }
+  return "Im Gast als root ausführen: sh /media/cdrom/VBoxLinuxAdditions.run (Pfad je nach Distribution).";
+}
+
+async function insertGuestAdditions(vm) {
+  try {
+    await api("POST", "/api/vms/" + vm.uuid + "/guest-additions");
+    toast("Gasterweiterungen eingelegt. " + guestAdditionsHint(vm));
+    refreshSoon();
+    return true;
+  } catch (e) {
+    toast(e.message, true);
+    return false;
+  }
+}
 
 async function powerDialog(vm) {
   const choice = await choose("„" + vm.name + "“ beenden", "Wie soll die VM beendet werden?", [
@@ -548,8 +570,11 @@ async function renderDrawer() {
     body += '<div class="row"><div class="field"><label>Arbeitsspeicher (MB)</label><input class="input" type="number" min="256" step="256" data-field="memory" value="' + d.memory + '" ' + (off ? "" : "disabled") + "></div>" +
       '<div class="field"><label>CPUs</label><input class="input" type="number" min="1" max="64" data-field="cpus" value="' + d.cpus + '" ' + (off ? "" : "disabled") + "></div></div>" +
       '<div class="field"><label>Installationsmedium (CD/DVD)</label><select class="input" data-field="iso" ' + (d.policy.cd ? "" : "disabled") + '><option value="">– leer –</option>' +
+      '<option value="@guest-additions" ' + (vm.guest_additions_inserted && d.iso === vm.iso || d.iso === "@guest-additions" ? "selected" : "") + ">VirtualBox-Gasterweiterungen</option>" +
       S.isos.map((i) => { const sel = d.iso && d.iso.endsWith("/" + i.name); return '<option value="' + esc(i.name) + '" ' + (sel ? "selected" : "") + ">" + esc(i.name) + "</option>"; }).join("") +
       '</select><span class="hint">Kann auch im laufenden Betrieb gewechselt werden.</span></div>' +
+      (d.policy.cd ? '<button type="button" class="btn" id="vm-ga" style="margin-bottom:8px">' + icon("disc") + "Gasterweiterungen einlegen</button>" +
+        '<p class="hint" style="font-size:12.5px;color:var(--text-muted);margin:0 0 12px">Für automatische Auflösung, 3D-Beschleunigung, Maus-Integration und Zwischenablage. ' + esc(guestAdditionsHint(vm)) + "</p>" : "") +
       '<dl class="kv" style="margin:18px 0"><dt>Festplatte</dt><dd>' + esc(vm.disk || "–") + "</dd><dt>Firmware</dt><dd>" + esc(vm.firmware.toUpperCase()) +
       "</dd><dt>Grafikspeicher</dt><dd>" + vm.vram + " MB</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
       switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off || isLegacy(vm))) +
@@ -609,6 +634,13 @@ $("#overlay").addEventListener("click", async (ev) => {
   else if (colBtn) { S.draft.color = colBtn.dataset.color; $$(".drawer [data-color]").forEach((b) => b.classList.toggle("active", b === colBtn)); }
   else if (clipBtn) { S.draft.policy.clipboard = clipBtn.dataset.clip; $$("[data-clip]").forEach((b) => b.classList.toggle("active", b === clipBtn)); }
   else if (ev.target.closest("#vm-save")) saveDrawer(vm);
+  else if (ev.target.closest("#vm-ga")) {
+    if (await insertGuestAdditions(vm)) {
+      S.draft.iso = "@guest-additions";
+      const sel = $(".drawer select[data-field=iso]");
+      if (sel) sel.value = "@guest-additions";
+    }
+  }
   else if (ev.target.closest("#vm-delete")) {
     if (await confirmBox("„" + vm.name + "“ löschen?", "Die VM und alle ihre Festplatten und Snapshots werden unwiderruflich gelöscht.", "Endgültig löschen", true)) {
       run(api("DELETE", "/api/vms/" + vm.uuid), "VM gelöscht").catch(() => {});

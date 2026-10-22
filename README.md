@@ -115,6 +115,10 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   bekommt automatisch UEFI, Secure Boot und ein virtuelles TPM 2.0; Windows 7
   bekommt BIOS, USB 2.0 und eine Intel-PRO/1000-Netzwerkkarte, für die es
   eigene Treiber mitbringt.
+* **Gasterweiterungen** (Guest Additions) legt der Disc-Knopf an der VM-Karte
+  bzw. *Hardware → Gasterweiterungen einlegen* ins virtuelle DVD-Laufwerk ein,
+  auch im laufenden Betrieb (`vmbox-ctl guest-additions <vm>`). Danach im Gast
+  `VBoxWindowsAdditions.exe` bzw. `VBoxLinuxAdditions.run` starten.
 * **Windows XP und 2000** bekommen zeitgemäße Hardware, für die sie Treiber
   mitbringen: IDE-Controller, PCnet-FAST-III-Netzwerkkarte, AC'97-Ton,
   PS/2-Maus und VBoxVGA (ohne 3D). Weil es keine Sicherheitsupdates mehr gibt,
@@ -146,6 +150,7 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
 vmbox-ctl list [--json]                 VMs auflisten
 vmbox-ctl info <vm>                     Details (Name, Slot oder UUID)
 vmbox-ctl start|shutdown|poweroff|pause|resume|reboot|save <vm>
+vmbox-ctl guest-additions <vm>          Gasterweiterungen einlegen
 vmbox-ctl switch ui|next|prev|<vm>      Anzeige umschalten
 vmbox-ctl switch slot <n>
 vmbox-ctl lock                          Bildschirm sperren

@@ -393,6 +393,12 @@ def api_vm_action(h, ref, action):
     h._json(200, {"ok": True})
 
 
+@route("POST", r"/api/vms/([^/]+)/guest-additions")
+def api_guest_additions(h, ref):
+    vm = h.app.toolstack.find_vm(urllib.parse.unquote(ref))
+    h._json(200, h.app.toolstack.insert_guest_additions(vm["uuid"]))
+
+
 @route("GET", r"/api/vms/([0-9a-fA-F-]{36})/snapshots")
 def api_snapshots(h, uuid):
     h._json(200, {"snapshots": h.app.toolstack.snapshots(_uuid(uuid))})

@@ -31,14 +31,18 @@ def build_app(cfg):
         display = VirtualDisplay(running=vbox.running_vms)
         host = FakeHost(cfg.state_dir, vbox.version, live=cfg.live)
         media = FakeMedia(cfg.iso_dir, os.path.join(cfg.state_dir, "demo-stick"))
+        ga_paths = (os.path.join(cfg.state_dir, "VBoxGuestAdditions.iso"),)
+        open(ga_paths[0], "a").close()
     else:
         vbox = VBoxManage(cfg.vboxmanage, gui_env={"DISPLAY": cfg.display, "XAUTHORITY": cfg.xauthority})
         display = X11Display(cfg.display, cfg.xauthority)
         host = Host(cfg.state_dir, vbox.version, live=cfg.live)
         media = Media(cfg.iso_dir)
+        ga_paths = None
     os.makedirs(cfg.iso_dir, exist_ok=True)
     toolstack = Toolstack(vbox, display, cfg.iso_dir,
-                          kvm_loaded=kvm_loaded if cfg.backend != "fake" else (lambda: False))
+                          kvm_loaded=kvm_loaded if cfg.backend != "fake" else (lambda: False),
+                          **({"guest_additions_paths": ga_paths} if ga_paths else {}))
     auth = Auth(cfg.auth_file, cfg.session_timeout)
     auth.locked = True
     return App(cfg, toolstack, auth, host, media)
