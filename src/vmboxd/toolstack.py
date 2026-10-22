@@ -41,6 +41,11 @@ def host_cpu_vendor():
     return "intel"
 
 
+# Height of the VMBox top bar (see vmbox-shell): VM windows get the rest.
+BAR_HEIGHT = 37
+COMMON_VIDEO_MODES = [(1920, 1080), (1920, 1200), (1600, 900), (1366, 768), (1280, 720)]
+MAX_CUSTOM_MODES = 8
+
 # Shipped by the Oracle VirtualBox package.
 GUEST_ADDITIONS_PATHS = ("/usr/share/virtualbox/VBoxGuestAdditions.iso",
                          "/usr/lib/virtualbox/additions/VBoxGuestAdditions.iso")
@@ -379,6 +384,7 @@ class Toolstack:
                     self.vbox.set_extradata(uuid, P + key, value)
                 for key, value in VM_GUI_EXTRADATA.items():
                     self.vbox.set_extradata(uuid, key, value)
+                self._apply_video_modes(uuid)
             except (VBoxError, ToolstackError):
                 log.exception("VM creation failed, cleaning up %s", uuid)
                 try:
@@ -555,9 +561,37 @@ class Toolstack:
             # never block a VM because of the profile - it then simply uses the host CPU
             log.warning("could not set CPU profile %r on %s: %s", profile, uuid, exc)
 
+    def video_modes(self):
+        """VESA modes offered to guests without a graphics driver (Guest
+        Additions): the exact VM window below the bar, the full screen and
+        common sizes. Widths are rounded down to a multiple of 8."""
+        modes = []
+        try:
+            size = self.display.screen_size()
+        except DisplayError:
+            size = None
+        if size:
+            modes += [(size[0], size[1] - BAR_HEIGHT), size]
+        result = []
+        for w, h in modes + COMMON_VIDEO_MODES:
+            mode = (w - w % 8, h)
+            if mode[0] >= 640 and mode[1] >= 480 and mode not in result:
+                result.append(mode)
+        return result[:MAX_CUSTOM_MODES]
+
+    def _apply_video_modes(self, uuid):
+        try:
+            modes = self.video_modes()
+            for i in range(MAX_CUSTOM_MODES):
+                value = "%dx%dx32" % modes[i] if i < len(modes) else None
+                self.vbox.set_extradata(uuid, "CustomVideoMode%d" % (i + 1), value)
+        except VBoxError as exc:
+            log.warning("could not set video modes for %s: %s", uuid, exc)
+
     def _enforce(self, vm):
         """Re-apply hardening and policy before every start, in case somebody
         changed the machine behind our back with VBoxManage."""
+        self._apply_video_modes(vm["uuid"])
         if not vm["cpu_profile"] and self._legacy_cpu_profile(vm["template"]):
             # VMs created before the legacy CPU profile existed get it now.
             self._apply_cpu_profile(vm["uuid"], vm["template"])

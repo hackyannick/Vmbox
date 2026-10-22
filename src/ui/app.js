@@ -369,7 +369,8 @@ $("#main").addEventListener("click", async (ev) => {
 function guestAdditionsHint(vm) {
   if ((vm.ostype || "").startsWith("Windows")) {
     return "Im Gast das CD-Laufwerk öffnen und VBoxWindowsAdditions.exe starten" +
-      (isLegacy(vm) ? " (Windows XP/2000 benötigen ggf. eine ältere Version der Gasterweiterungen)" : "") + ".";
+      (isLegacy(vm) ? " (Windows XP/2000 benötigen ggf. eine ältere Version der Gasterweiterungen)" : "") + "." +
+      (vm.template === "windows7" ? " Windows 7 braucht vorher die Updates KB4474419 und KB4490628 (SHA-2-Treibersignaturen), sonst bleibt es beim Standard-VGA-Treiber mit max. 1280×1024." : "");
   }
   return "Im Gast als root ausführen: sh /media/cdrom/VBoxLinuxAdditions.run (Pfad je nach Distribution).";
 }

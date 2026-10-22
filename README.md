@@ -128,6 +128,13 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   kennt) und die Weitergabe des Spectre-Schutzes (IBRS/IBPB) frei wählen.
   Bluescreen `0x5D` mit erstem Parameter `0x53524249` („IBRS“) betrifft die
   Spectre-Schutzfunktionen – dann diese beiden Einstellungen ausprobieren.
+* **Auflösung ohne Gasterweiterungen:** VMBox meldet jeder VM passende
+  VESA-Modi – die exakte Fenstergröße unter der Statusleiste, die volle
+  Bildschirmgröße und gängige Größen. So lässt sich auch mit dem
+  Standard-VGA-Treiber die volle Auflösung wählen (gilt ab dem nächsten
+  Kaltstart der VM). Für automatisches Anpassen weiterhin die
+  Gasterweiterungen installieren; Windows 7 braucht dafür vorher die Updates
+  KB4474419 und KB4490628 (SHA-2-Treibersignaturen).
 * **Windows XP und 2000** bekommen zeitgemäße Hardware, für die sie Treiber
   mitbringen: IDE-Controller, PCnet-FAST-III-Netzwerkkarte, AC'97-Ton,
   PS/2-Maus und VBoxVGA (ohne 3D). Weil es keine Sicherheitsupdates mehr gibt,

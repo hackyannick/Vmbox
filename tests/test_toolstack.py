@@ -124,6 +124,19 @@ class ToolstackTest(unittest.TestCase):
         with self.assertRaises(ToolstackError):
             self.ts.action(vm["uuid"], "discard")
 
+    def test_vesa_modes_match_the_screen_for_guests_without_drivers(self):
+        self.display.screen_size = lambda: (1366, 768)
+        vm = self.create("Win7", template="windows7")
+        extra = self.vbox.extradata(vm["uuid"])
+        # exact window below the 37 px bar, full screen (width rounded to 8), common sizes
+        self.assertEqual(extra["CustomVideoMode1"], "1360x731x32")
+        self.assertEqual(extra["CustomVideoMode2"], "1360x768x32")
+        self.assertIn("1920x1080x32", extra.values())
+        # a different monitor is picked up on the next cold start
+        self.display.screen_size = lambda: (2560, 1440)
+        self.ts.action(vm["uuid"], "start")
+        self.assertEqual(self.vbox.extradata(vm["uuid"])["CustomVideoMode1"], "2560x1403x32")
+
     def test_3d_can_be_toggled_while_stopped(self):
         vm = self.create(template="linux")
         self.assertTrue(vm["accelerate3d"])

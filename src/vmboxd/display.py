@@ -139,6 +139,28 @@ class X11Display:
             return None
         return self.vm_for_window(wid, uuids)
 
+    def screen_size(self):
+        """(width, height) of the primary monitor, or None."""
+        try:
+            out = self._run("xrandr", "--current")
+        except DisplayError:
+            out = ""
+        first = None
+        for line in out.splitlines():
+            m = re.search(r" connected (primary )?(\d+)x(\d+)\+\d+\+\d+", line)
+            if m:
+                size = (int(m.group(2)), int(m.group(3)))
+                if m.group(1):
+                    return size
+                first = first or size
+        if first:
+            return first
+        try:
+            m = re.search(r"dimensions:\s+(\d+)x(\d+) pixels", self._run("xdpyinfo"))
+        except DisplayError:
+            return None
+        return (int(m.group(1)), int(m.group(2))) if m else None
+
     def idle_ms(self):
         try:
             return int(self._run("xprintidle").strip())
@@ -178,3 +200,6 @@ class VirtualDisplay:
 
     def idle_ms(self):
         return 0
+
+    def screen_size(self):
+        return (1920, 1080)
