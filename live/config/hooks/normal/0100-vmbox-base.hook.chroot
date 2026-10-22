@@ -1,0 +1,50 @@
+#!/bin/sh
+# VMBox base configuration of the image.
+set -e
+
+# The single unprivileged account that runs vmboxd, the X session and all VMs.
+if ! id vmbox >/dev/null 2>&1; then
+    adduser --system --group --home /home/vmbox --shell /usr/sbin/nologin --gecos "VMBox" vmbox
+fi
+for group in audio video input render plugdev; do
+    getent group "$group" >/dev/null && usermod -aG "$group" vmbox
+done
+install -d -m 0700 -o vmbox -g vmbox /home/vmbox /var/lib/vmbox /var/lib/vmbox/isos
+
+# Nobody logs in on the host: no root password, no shells.
+passwd -l root
+
+# German defaults (changeable in the installer).
+sed -i 's/^# *\(de_DE.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+locale-gen
+printf 'LANG=de_DE.UTF-8\n' >/etc/default/locale
+ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+echo Europe/Berlin >/etc/timezone
+cat >/etc/default/keyboard <<'KBD'
+XKBMODEL="pc105"
+XKBLAYOUT="de"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+KBD
+
+# Branding
+. /usr/lib/os-release
+rm -f /etc/os-release
+cat >/etc/os-release <<OSR
+PRETTY_NAME="VMBox $(cat /usr/share/vmbox/VERSION) (Debian ${VERSION_ID} ${VERSION_CODENAME})"
+NAME="VMBox"
+VERSION_ID="$(cat /usr/share/vmbox/VERSION)"
+VERSION="$(cat /usr/share/vmbox/VERSION) (${VERSION_CODENAME})"
+VERSION_CODENAME=${VERSION_CODENAME}
+ID=vmbox
+ID_LIKE=debian
+HOME_URL="https://github.com/hackyannick/Vmbox"
+OSR
+echo vmbox >/etc/hostname
+
+# Services
+systemctl enable vmboxd.service vmbox-session.service vmbox-installer-boot.service
+systemctl enable nftables.service NetworkManager.service
+systemctl mask getty@tty1.service
+systemctl set-default multi-user.target

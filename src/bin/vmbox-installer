@@ -1,0 +1,333 @@
+#!/bin/bash
+# VMBox installer - installs the running live system onto a disk.
+#
+# Layout of the target disk (GPT):
+#   1  512 MiB  EFI system partition          (vfat)
+#   2    1 MiB  BIOS boot partition           (legacy boot)
+#   3   24 GiB  VMBox system                  (ext4)
+#   4   rest    VM storage, LUKS2 encrypted   (ext4)  -> /storage
+#               /storage/home  -> /home          (VirtualBox VMs and settings)
+#               /storage/state -> /var/lib/vmbox (password, ISO images)
+set -uo pipefail
+
+TITLE="VMBox Installation"
+LOG=/var/log/vmbox-installer.log
+MEDIUM=/run/live/medium
+SQUASHFS="$MEDIUM/live/filesystem.squashfs"
+TARGET=/mnt/vmbox-target
+MAPPER=vmbox-install-storage
+ROOT_SIZE_GB=24
+MIN_DISK_GB=48
+
+# Blue whiptail theme
+export NEWT_COLORS='
+root=white,blue
+border=white,blue
+window=white,blue
+shadow=black,black
+title=brightcyan,blue
+button=blue,white
+actbutton=white,cyan
+compactbutton=white,blue
+checkbox=white,blue
+actcheckbox=blue,white
+entry=white,black
+label=white,blue
+listbox=white,blue
+actlistbox=blue,white
+sellistbox=white,blue
+actsellistbox=blue,white
+textbox=white,blue
+acttextbox=blue,white
+helpline=white,blue
+roottext=brightcyan,blue
+emptyscale=blue,black
+fullscale=cyan,cyan
+disentry=gray,blue
+'
+
+log() { echo "[$(date +%T)] $*" >>"$LOG"; }
+msg() { whiptail --title "$TITLE" --msgbox "$1" "${2:-12}" 72; }
+die() {
+    log "FEHLER: $1"
+    cleanup
+    msg "Die Installation ist fehlgeschlagen:\n\n$1\n\nDetails stehen in $LOG." 14
+    exit 1
+}
+cleanup() {
+    sync
+    for m in sys/firmware/efi/efivars sys proc dev/pts dev run boot/efi storage ""; do
+        mountpoint -q "$TARGET/$m" 2>/dev/null && umount -l "$TARGET/$m" >>"$LOG" 2>&1
+    done
+    [ -e "/dev/mapper/$MAPPER" ] && cryptsetup close "$MAPPER" >>"$LOG" 2>&1
+    return 0
+}
+cancel() { cleanup; msg "Die Installation wurde abgebrochen. Es wurden keine Änderungen vorgenommen." 9; exit 0; }
+
+part() {
+    case "$DISK" in
+        *[0-9]) echo "${DISK}p$1" ;;
+        *) echo "${DISK}$1" ;;
+    esac
+}
+
+ask_password() { # title text min_length -> echoes password
+    local title="$1" text="$2" min="$3" p1 p2
+    while true; do
+        p1=$(whiptail --title "$title" --passwordbox "$text" 12 72 3>&1 1>&2 2>&3) || return 1
+        if [ "${#p1}" -lt "$min" ]; then
+            msg "Das Passwort muss mindestens $min Zeichen lang sein." 8
+            continue
+        fi
+        p2=$(whiptail --title "$title" --passwordbox "Bitte wiederholen:" 10 72 3>&1 1>&2 2>&3) || return 1
+        [ "$p1" = "$p2" ] && { printf '%s' "$p1"; return 0; }
+        msg "Die Passwörter stimmen nicht überein." 8
+    done
+}
+
+# --------------------------------------------------------------------------
+# Questions
+# --------------------------------------------------------------------------
+: >"$LOG"
+[ "$(id -u)" -eq 0 ] || { echo "vmbox-installer muss als root laufen" >&2; exit 1; }
+[ -f "$SQUASHFS" ] || die "Das Live-System ($SQUASHFS) wurde nicht gefunden."
+
+whiptail --title "$TITLE" --yes-button "Weiter" --no-button "Abbrechen" --yesno \
+"Willkommen bei VMBox!
+
+Dieser Assistent installiert VMBox dauerhaft auf eine Festplatte:
+
+  • minimales, gehärtetes Host-System mit VirtualBox
+  • VM-Speicher mit LUKS2 verschlüsselt (optional TPM-Entsperrung)
+  • Dashboard mit Passwortschutz
+
+ACHTUNG: Die ausgewählte Festplatte wird vollständig gelöscht." 18 72 || cancel
+
+live_disk=$(lsblk -no PKNAME "$(findmnt -no SOURCE "$MEDIUM" 2>/dev/null)" 2>/dev/null | head -n1)
+menu=()
+while read -r name size type; do
+    [ "$type" = "disk" ] || continue
+    [ "$(basename "$name")" = "$live_disk" ] && continue
+    case "$(basename "$name")" in loop*|zram*|sr*|fd*) continue ;; esac
+    model=$(lsblk -dno MODEL "$name" | xargs)
+    tran=$(lsblk -dno TRAN "$name" | xargs)
+    menu+=("$name" "$(numfmt --to=iec --suffix=B "$size")  ${tran:-?}  ${model:-}")
+done < <(lsblk -dnpbo NAME,SIZE,TYPE)
+[ "${#menu[@]}" -gt 0 ] || die "Es wurde keine geeignete Festplatte gefunden."
+
+DISK=$(whiptail --title "$TITLE" --menu "Auf welche Festplatte soll VMBox installiert werden?" 18 72 8 \
+    "${menu[@]}" 3>&1 1>&2 2>&3) || cancel
+size_gb=$(( $(lsblk -dnbo SIZE "$DISK") / 1024 / 1024 / 1024 ))
+[ "$size_gb" -ge "$MIN_DISK_GB" ] || die "$DISK ist zu klein ($size_gb GB, mindestens $MIN_DISK_GB GB nötig)."
+
+KEYMAP=$(whiptail --title "$TITLE" --default-item de --menu "Tastaturbelegung:" 16 72 7 \
+    de "Deutsch" \
+    de-nodeadkeys "Deutsch (ohne Tottasten)" \
+    ch "Schweiz (Deutsch)" \
+    at "Österreich" \
+    us "Englisch (USA)" \
+    gb "Englisch (UK)" \
+    fr "Französisch" 3>&1 1>&2 2>&3) || cancel
+
+HOSTNAME_NEW=$(whiptail --title "$TITLE" --inputbox "Rechnername:" 10 72 "vmbox" 3>&1 1>&2 2>&3) || cancel
+[[ "$HOSTNAME_NEW" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]] || HOSTNAME_NEW=vmbox
+
+LUKS_PW=$(ask_password "Festplattenverschlüsselung" \
+"Passphrase für den verschlüsselten VM-Speicher (mindestens 8 Zeichen).
+
+Sie wird beim Start abgefragt, sofern keine TPM-Entsperrung eingerichtet ist,
+und dient immer als Notfall-Schlüssel." 8) || cancel
+
+USE_TPM=no
+if [ -e /sys/class/tpm/tpm0 ] && command -v systemd-cryptenroll >/dev/null; then
+    whiptail --title "$TITLE" --yesno \
+"Ein TPM 2.0 wurde gefunden.
+
+Soll der VM-Speicher beim Start automatisch über das TPM entsperrt werden?
+Der Schlüssel wird an den Secure-Boot-Zustand (PCR 7) gebunden – ändert sich
+dieser, wird wieder nach der Passphrase gefragt." 14 72 && USE_TPM=yes
+fi
+
+UI_PW=$(ask_password "VMBox-Passwort" \
+"Passwort für das VMBox-Dashboard und den Sperrbildschirm (mindestens 6 Zeichen)." 6) || cancel
+
+whiptail --title "$TITLE" --yes-button "Installieren" --no-button "Abbrechen" --defaultno --yesno \
+"Zusammenfassung:
+
+  Festplatte:     $DISK ($size_gb GB) – WIRD GELÖSCHT
+  Tastatur:       $KEYMAP
+  Rechnername:    $HOSTNAME_NEW
+  Verschlüsselung: LUKS2$( [ "$USE_TPM" = yes ] && echo " + TPM 2.0" )
+
+Jetzt installieren?" 16 72 || cancel
+
+# --------------------------------------------------------------------------
+# Installation
+# --------------------------------------------------------------------------
+gauge() { printf 'XXX\n%s\n%s\nXXX\n' "$1" "$2"; }
+
+install_system() {
+    set -e
+    local efi root storage luks_uuid
+    efi=$(part 1); root=$(part 3); storage=$(part 4)
+
+    gauge 3 "Festplatte wird partitioniert …"
+    log "partitioning $DISK"
+    swapoff -a || true
+    wipefs -af "$DISK"
+    sgdisk --zap-all "$DISK"
+    sgdisk -n1:0:+512M -t1:EF00 -c1:VMBOX-EFI \
+           -n2:0:+1M   -t2:EF02 -c2:VMBOX-BIOS \
+           -n3:0:+${ROOT_SIZE_GB}G -t3:8304 -c3:VMBOX-SYSTEM \
+           -n4:0:0     -t4:8309 -c4:VMBOX-STORAGE "$DISK"
+    partx -u "$DISK" || true
+    udevadm settle
+    sleep 1
+
+    gauge 8 "Dateisysteme werden angelegt …"
+    mkfs.vfat -F 32 -n VMBOXEFI "$efi"
+    mkfs.ext4 -q -F -L vmbox-system "$root"
+
+    gauge 12 "VM-Speicher wird verschlüsselt …"
+    printf '%s' "$LUKS_PW" | cryptsetup luksFormat --batch-mode --type luks2 --label VMBOX-STORAGE --key-file - "$storage"
+    printf '%s' "$LUKS_PW" | cryptsetup open --key-file - "$storage" "$MAPPER"
+    mkfs.ext4 -q -F -L vmbox-storage "/dev/mapper/$MAPPER"
+    luks_uuid=$(cryptsetup luksUUID "$storage")
+
+    mkdir -p "$TARGET"
+    mount "$root" "$TARGET"
+    mkdir -p "$TARGET/boot/efi" "$TARGET/storage"
+    mount "$efi" "$TARGET/boot/efi"
+    mount "/dev/mapper/$MAPPER" "$TARGET/storage"
+
+    gauge 18 "System wird kopiert (das dauert einige Minuten) …"
+    unsquashfs -f -n -d "$TARGET" "$SQUASHFS" >>"$LOG"
+
+    gauge 62 "Kernel wird eingerichtet …"
+    if ! ls "$TARGET"/boot/vmlinuz-* >/dev/null 2>&1; then
+        for f in "$MEDIUM"/live/vmlinuz-*; do cp "$f" "$TARGET/boot/"; done
+    fi
+    for d in dev dev/pts proc sys run; do mount --bind "/$d" "$TARGET/$d"; done
+    [ -d /sys/firmware/efi/efivars ] && mount --bind /sys/firmware/efi/efivars "$TARGET/sys/firmware/efi/efivars"
+
+    gauge 66 "Konfiguration wird geschrieben …"
+    cat >"$TARGET/etc/fstab" <<EOF
+# VMBox
+UUID=$(blkid -s UUID -o value "$root")  /          ext4  errors=remount-ro  0 1
+UUID=$(blkid -s UUID -o value "$efi")   /boot/efi  vfat  umask=0077         0 1
+/dev/mapper/vmbox-storage  /storage  ext4  defaults,x-systemd.device-timeout=0  0 2
+/storage/home   /home           none  bind,x-systemd.requires-mounts-for=/storage  0 0
+/storage/state  /var/lib/vmbox  none  bind,x-systemd.requires-mounts-for=/storage  0 0
+EOF
+    local tpm_opt=""
+    [ "$USE_TPM" = yes ] && tpm_opt=",tpm2-device=auto"
+    echo "vmbox-storage UUID=$luks_uuid none luks,discard$tpm_opt" >"$TARGET/etc/crypttab"
+
+    local uid gid
+    uid=$(chroot "$TARGET" id -u vmbox)
+    gid=$(chroot "$TARGET" id -g vmbox)
+    mkdir -p "$TARGET/storage/home" "$TARGET/storage/state/isos"
+    if [ -d "$TARGET/home/vmbox" ]; then
+        cp -a "$TARGET/home/vmbox" "$TARGET/storage/home/"
+        rm -rf "${TARGET:?}/home/vmbox"
+    else
+        mkdir -p "$TARGET/storage/home/vmbox"
+    fi
+    mkdir -p "$TARGET/var/lib/vmbox"
+    printf '%s' "$UI_PW" | python3 -c '
+import json, sys
+sys.path.insert(0, "/usr/lib/vmbox")
+from vmboxd.auth import hash_password
+json.dump({"password": hash_password(sys.stdin.read())}, open(sys.argv[1], "w"))
+' "$TARGET/storage/state/auth.json"
+    chmod 600 "$TARGET/storage/state/auth.json"
+    chown -R "$uid:$gid" "$TARGET/storage/home/vmbox" "$TARGET/storage/state"
+    chmod 700 "$TARGET/storage/home/vmbox" "$TARGET/storage/state"
+
+    echo "$HOSTNAME_NEW" >"$TARGET/etc/hostname"
+    printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\t\tlocalhost ip6-localhost ip6-loopback\n' "$HOSTNAME_NEW" >"$TARGET/etc/hosts"
+    local layout="$KEYMAP" variant=""
+    case "$KEYMAP" in
+        de-nodeadkeys) layout=de; variant=nodeadkeys ;;
+        at) layout="at" ;;
+    esac
+    cat >"$TARGET/etc/default/keyboard" <<EOF
+XKBMODEL="pc105"
+XKBLAYOUT="$layout"
+XKBVARIANT="$variant"
+XKBOPTIONS=""
+BACKSPACE="guess"
+EOF
+    : >"$TARGET/etc/machine-id"
+    rm -f "$TARGET/var/lib/dbus/machine-id"
+
+    gauge 70 "Live-Komponenten werden entfernt …"
+    local live_pkgs=()
+    for p in live-boot live-boot-initramfs-tools live-config live-config-systemd live-tools; do
+        chroot "$TARGET" dpkg -s "$p" >/dev/null 2>&1 && live_pkgs+=("$p")
+    done
+    [ "${#live_pkgs[@]}" -gt 0 ] && chroot "$TARGET" env DEBIAN_FRONTEND=noninteractive apt-get -y purge "${live_pkgs[@]}" >>"$LOG"
+    rm -f "$TARGET/etc/systemd/system/multi-user.target.wants/vmbox-installer-boot.service"
+
+    gauge 76 "Initramfs wird erzeugt …"
+    for k in "$TARGET"/lib/modules/*; do
+        k=$(basename "$k")
+        if [ -e "$TARGET/boot/initrd.img-$k" ]; then
+            chroot "$TARGET" update-initramfs -u -k "$k" >>"$LOG" 2>&1
+        else
+            chroot "$TARGET" update-initramfs -c -k "$k" >>"$LOG" 2>&1
+        fi
+    done
+
+    gauge 86 "Bootloader wird installiert …"
+    cat >"$TARGET/etc/default/grub" <<'EOF'
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=2
+GRUB_DISTRIBUTOR="VMBox"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+GRUB_CMDLINE_LINUX=""
+GRUB_GFXMODE=auto
+GRUB_BACKGROUND=/usr/share/vmbox/artwork/grub.png
+GRUB_COLOR_NORMAL="white/black"
+GRUB_COLOR_HIGHLIGHT="black/light-cyan"
+GRUB_DISABLE_OS_PROBER=true
+EOF
+    if [ -d /sys/firmware/efi ]; then
+        chroot "$TARGET" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=VMBox >>"$LOG" 2>&1 || true
+        chroot "$TARGET" grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable --no-nvram >>"$LOG" 2>&1
+        chroot "$TARGET" grub-install --target=i386-pc "$DISK" >>"$LOG" 2>&1 || true
+    else
+        chroot "$TARGET" grub-install --target=i386-pc "$DISK" >>"$LOG" 2>&1
+        chroot "$TARGET" grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable --no-nvram >>"$LOG" 2>&1 || true
+    fi
+    chroot "$TARGET" update-grub >>"$LOG" 2>&1
+
+    if [ "$USE_TPM" = yes ]; then
+        gauge 94 "TPM-Entsperrung wird eingerichtet …"
+        if ! PASSWORD="$LUKS_PW" systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$storage" >>"$LOG" 2>&1; then
+            log "TPM enrolment failed - passphrase only"
+            echo tpm-failed >/tmp/vmbox-installer.warn
+        fi
+    fi
+
+    gauge 98 "Abschluss …"
+    cp "$LOG" "$TARGET/var/log/vmbox-installer.log" || true
+    sync
+    gauge 100 "Fertig."
+}
+
+rm -f /tmp/vmbox-installer.warn
+install_system 2>>"$LOG" | whiptail --title "$TITLE" --gauge "Installation wird vorbereitet …" 8 72 0
+status=${PIPESTATUS[0]}
+[ "$status" -eq 0 ] || die "Ein Installationsschritt ist fehlgeschlagen (Status $status)."
+cleanup
+
+note=""
+[ -e /tmp/vmbox-installer.warn ] && note="
+
+Hinweis: Die TPM-Entsperrung konnte nicht eingerichtet werden. Beim Start
+wird nach der Passphrase gefragt."
+msg "VMBox wurde erfolgreich installiert!$note
+
+Entferne das Installationsmedium. Der Rechner wird jetzt neu gestartet." 14
+systemctl reboot

@@ -1,0 +1,82 @@
+# --- Base system --------------------------------------------------------
+systemd-sysv
+libpam-systemd
+systemd-timesyncd
+udev
+dbus
+polkitd
+locales
+console-setup
+keyboard-configuration
+tzdata
+ca-certificates
+curl
+gnupg
+kmod
+pciutils
+usbutils
+procps
+iproute2
+less
+nano
+
+# --- Firmware & microcode (real hardware) ------------------------------
+firmware-linux-free
+firmware-misc-nonfree
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+firmware-amd-graphics
+intel-microcode
+amd64-microcode
+
+# --- Networking & firewall ---------------------------------------------
+network-manager
+wpasupplicant
+iw
+nftables
+
+# --- Storage security ----------------------------------------------------
+cryptsetup
+cryptsetup-bin
+systemd-cryptsetup
+tpm2-tools
+
+# --- Building the VirtualBox kernel modules -----------------------------
+gcc
+make
+perl
+
+# --- Graphical session ---------------------------------------------------
+xserver-xorg-core
+xserver-xorg-legacy
+xserver-xorg-input-libinput
+xserver-xorg-video-all
+libgl1-mesa-dri
+xinit
+xauth
+x11-xserver-utils
+x11-utils
+x11-xkb-utils
+openbox
+wmctrl
+xprintidle
+fonts-inter
+fonts-dejavu-core
+
+# --- VMBox shell & daemon ------------------------------------------------
+python3
+python3-gi
+gir1.2-gtk-3.0
+gir1.2-webkit2-4.1
+
+# --- Installer -----------------------------------------------------------
+gdisk
+dosfstools
+e2fsprogs
+squashfs-tools
+whiptail
+grub-efi-amd64-bin
+grub-pc-bin
+grub2-common
+efibootmgr

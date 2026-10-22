@@ -1,0 +1,17 @@
+#!/bin/sh
+# X session of the "vmbox" user: window manager, keyboard layout and the VMBox shell.
+
+[ -r /etc/default/keyboard ] && . /etc/default/keyboard
+setxkbmap -layout "${XKBLAYOUT:-de}" ${XKBVARIANT:+-variant "$XKBVARIANT"} ${XKBOPTIONS:+-option "$XKBOPTIONS"} || true
+
+xsetroot -solid "#0a2d6e" -cursor_name left_ptr || true
+# Blank the screen after 10 minutes; vmboxd locks after its own idle timeout.
+xset s 600 600 || true
+
+openbox --config-file /usr/share/vmbox/openbox/rc.xml &
+
+# The shell must always be there - restart it if it ever exits.
+while true; do
+    /usr/bin/vmbox-shell
+    sleep 1
+done

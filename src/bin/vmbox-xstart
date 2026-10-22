@@ -1,0 +1,12 @@
+#!/bin/sh
+# Started by vmbox-session.service as user "vmbox": prepare X authentication
+# and run the X server with the VMBox session on the current VT.
+set -e
+
+export XAUTHORITY="$HOME/.Xauthority"
+umask 077
+rm -f "$XAUTHORITY"
+xauth -q -f "$XAUTHORITY" add :0 . "$(mcookie)"
+
+exec xinit /usr/lib/vmbox/vmbox-session -- /usr/bin/X :0 vt1 -keeptty \
+    -auth "$XAUTHORITY" -nolisten tcp -nolisten local -noreset

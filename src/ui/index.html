@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VMBox Dashboard</title>
+  <link rel="icon" href="/logo.svg">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <!-- Login, first-time setup and the lock screen -->
+  <section id="auth" hidden>
+    <div>
+      <div class="clock" id="auth-clock">--:--</div>
+      <div class="date" id="auth-date"></div>
+    </div>
+    <form class="card glass" id="auth-form" autocomplete="off">
+      <img src="/logo.svg" alt="">
+      <h1 id="auth-title">VMBox</h1>
+      <p id="auth-text"></p>
+      <input class="input" type="password" id="auth-password" placeholder="Passwort" autofocus>
+      <input class="input" type="password" id="auth-password2" placeholder="Passwort wiederholen" hidden>
+      <button class="btn primary" type="submit" id="auth-submit">Entsperren</button>
+      <div class="error" id="auth-error"></div>
+    </form>
+    <div class="foot" id="auth-foot"></div>
+  </section>
+
+  <div id="app" hidden>
+    <aside id="sidebar">
+      <div class="brand">
+        <img src="/logo.svg" alt="">
+        <div><div class="name">VMBox</div><div class="sub">Secure Desktop</div></div>
+      </div>
+      <nav id="nav"></nav>
+      <div class="spacer"></div>
+      <div class="live-hint" id="live-hint" hidden>
+        <strong>Live-Modus</strong>
+        Änderungen gehen beim Neustart verloren. Unter „System“ kannst du VMBox installieren.
+      </div>
+      <div class="bottom">
+        <button class="btn ghost" id="btn-lock"></button>
+      </div>
+      <dl class="shortcuts">
+        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>Pos1</kbd></dt><dd>Dashboard</dd>
+        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>1–9</kbd></dt><dd>VM im Slot</dd>
+        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>Blättern</dd>
+        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>L</kbd></dt><dd>Sperren</dd>
+      </dl>
+    </aside>
+    <main id="main"></main>
+  </div>
+
+  <div id="overlay"></div>
+  <div id="toasts"></div>
+  <script src="/icons.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

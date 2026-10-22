@@ -1,0 +1,131 @@
+#!/usr/bin/python3
+"""vmbox-shell - the VMBox user interface (the UIVM of OpenXT).
+
+Shows two kiosk WebKit windows that talk to vmboxd on localhost:
+  * the top bar (a dock window that reserves screen space via a strut)
+  * the dashboard (maximised below the bar, titled "VMBox Dashboard")
+"""
+
+import os
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("WebKit2", "4.1")
+from gi.repository import Gdk, GLib, Gtk, WebKit2  # noqa: E402
+
+URL = os.environ.get("VMBOX_URL", "http://127.0.0.1:8470")
+BAR_HEIGHT = 37
+DEBUG = os.environ.get("VMBOX_DEBUG") == "1"
+BACKGROUND = Gdk.RGBA(0.02, 0.09, 0.22, 1.0)
+
+
+class Shell:
+    def __init__(self):
+        manager = WebKit2.WebsiteDataManager.new_ephemeral()
+        self.context = WebKit2.WebContext.new_with_website_data_manager(manager)
+        self.context.set_cache_model(WebKit2.CacheModel.DOCUMENT_VIEWER)
+        self.bar = self._window("VMBox Leiste", URL + "/bar", dock=True)
+        self.dashboard = self._window("VMBox Dashboard", URL + "/", dock=False)
+        display = Gdk.Display.get_default()
+        Gdk.Screen.get_default().connect("monitors-changed", lambda *_: self._place_bar())
+        display.connect("monitor-added", lambda *_: self._place_bar())
+        self._place_bar()
+        self.dashboard.show_all()
+        self.bar.show_all()
+
+    # -- windows ----------------------------------------------------------
+    def _view(self, url):
+        view = WebKit2.WebView.new_with_context(self.context)
+        settings = view.get_settings()
+        settings.set_enable_developer_extras(DEBUG)
+        settings.set_javascript_can_open_windows_automatically(False)
+        settings.set_enable_back_forward_navigation_gestures(False)
+        settings.set_enable_write_console_messages_to_stdout(DEBUG)
+        view.set_background_color(BACKGROUND)
+        view.connect("decide-policy", self._decide_policy)
+        view.connect("context-menu", lambda *_: not DEBUG)
+        view.connect("load-failed", self._load_failed)
+        view.connect("web-process-terminated", lambda v, *_: GLib.timeout_add_seconds(1, self._reload, v))
+        view.load_uri(url)
+        return view
+
+    def _window(self, title, url, dock):
+        win = Gtk.Window(title=title)
+        win.set_decorated(False)
+        win.override_background_color(Gtk.StateFlags.NORMAL, BACKGROUND)
+        win.connect("delete-event", lambda *_: True)  # cannot be closed
+        if dock:
+            win.set_type_hint(Gdk.WindowTypeHint.DOCK)
+            win.set_keep_above(True)
+            win.stick()
+            win.set_accept_focus(False)
+            win.connect("realize", lambda w: GLib.idle_add(self._set_strut))
+        else:
+            win.maximize()
+        win.add(self._view(url))
+        return win
+
+    def _monitor_geometry(self):
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        return monitor.get_geometry()
+
+    def _place_bar(self):
+        geo = self._monitor_geometry()
+        self.bar.set_size_request(geo.width, BAR_HEIGHT)
+        self.bar.resize(geo.width, BAR_HEIGHT)
+        self.bar.move(geo.x, geo.y)
+        if self.bar.get_realized():
+            self._set_strut()
+
+    def _set_strut(self):
+        """Reserve the top of the screen so maximised VM windows stay below the bar."""
+        geo = self._monitor_geometry()
+        gdk_window = self.bar.get_window()
+        if gdk_window is None:
+            return False
+        xid = gdk_window.get_xid()
+        top = geo.y + BAR_HEIGHT
+        partial = "0, 0, %d, 0, 0, 0, 0, 0, %d, %d, 0, 0" % (top, geo.x, geo.x + geo.width - 1)
+        for prop, value in (("_NET_WM_STRUT_PARTIAL", partial), ("_NET_WM_STRUT", "0, 0, %d, 0" % top)):
+            subprocess.run(["xprop", "-id", str(xid), "-f", prop, "32c", "-set", prop, value], check=False)
+        return False
+
+    # -- navigation policy ------------------------------------------------------
+    def _decide_policy(self, view, decision, kind):
+        if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
+            decision.ignore()
+            return True
+        if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
+            uri = decision.get_navigation_action().get_request().get_uri()
+            if not (uri == URL or uri.startswith(URL + "/")):
+                decision.ignore()
+                return True
+        return False
+
+    def _load_failed(self, view, _event, uri, _error):
+        # vmboxd may still be starting - retry quietly.
+        GLib.timeout_add_seconds(1, self._reload, view, uri)
+        return True
+
+    @staticmethod
+    def _reload(view, uri=None):
+        if uri:
+            view.load_uri(uri)
+        else:
+            view.reload()
+        return False
+
+
+def main():
+    Gtk.init(sys.argv)
+    Shell()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

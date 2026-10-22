@@ -1,0 +1,33 @@
+[Unit]
+Description=VMBox toolstack daemon
+Documentation=file:///usr/share/doc/vmbox/README.md
+After=network.target vboxdrv.service vmbox-session.service
+Wants=vboxdrv.service
+RequiresMountsFor=/var/lib/vmbox /home/vmbox
+ConditionKernelCommandLine=!vmbox.install
+
+[Service]
+Type=simple
+User=vmbox
+Group=vmbox
+SupplementaryGroups=vboxusers audio
+Environment=PYTHONPATH=/usr/lib/vmbox HOME=/home/vmbox DISPLAY=:0 XAUTHORITY=/home/vmbox/.Xauthority
+ExecStart=/usr/bin/python3 -m vmboxd
+# Save running VMs before the X session (stopped after us) goes away.
+ExecStop=/usr/bin/vmbox-ctl save-all
+TimeoutStopSec=180
+Restart=always
+RestartSec=2
+# VBoxSVC and the VM processes are children of vmboxd - a daemon restart
+# must not take the running VMs with it.
+KillMode=process
+RuntimeDirectory=vmbox
+RuntimeDirectoryPreserve=yes
+StateDirectory=vmbox
+# VirtualBox relies on setuid helpers, so NoNewPrivileges= cannot be used.
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

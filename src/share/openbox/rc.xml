@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Openbox configuration of the VMBox session.
+     Only VMBox shortcuts exist; the default menus, Alt+Tab and desktops are gone. -->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <resistance><strength>0</strength><screen_edge_strength>0</screen_edge_strength></resistance>
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+  </focus>
+  <placement><policy>Smart</policy><center>yes</center></placement>
+  <theme>
+    <name>Clearlooks</name>
+    <titleLayout>L</titleLayout>
+    <keepBorder>no</keepBorder>
+    <animateIconify>no</animateIconify>
+  </theme>
+  <desktops><number>1</number><firstdesk>1</firstdesk><popupTime>0</popupTime></desktops>
+  <resize><drawContents>yes</drawContents></resize>
+  <margins><top>0</top><bottom>0</bottom><left>0</left><right>0</right></margins>
+  <dock><noStrut>no</noStrut></dock>
+  <keyboard>
+    <keybind key="C-A-Home"><action name="Execute"><command>vmbox-ctl switch ui</command></action></keybind>
+    <keybind key="C-A-Right"><action name="Execute"><command>vmbox-ctl switch next</command></action></keybind>
+    <keybind key="C-A-Left"><action name="Execute"><command>vmbox-ctl switch prev</command></action></keybind>
+    <keybind key="C-A-l"><action name="Execute"><command>vmbox-ctl lock</command></action></keybind>
+    <keybind key="C-A-1"><action name="Execute"><command>vmbox-ctl switch slot 1</command></action></keybind>
+    <keybind key="C-A-2"><action name="Execute"><command>vmbox-ctl switch slot 2</command></action></keybind>
+    <keybind key="C-A-3"><action name="Execute"><command>vmbox-ctl switch slot 3</command></action></keybind>
+    <keybind key="C-A-4"><action name="Execute"><command>vmbox-ctl switch slot 4</command></action></keybind>
+    <keybind key="C-A-5"><action name="Execute"><command>vmbox-ctl switch slot 5</command></action></keybind>
+    <keybind key="C-A-6"><action name="Execute"><command>vmbox-ctl switch slot 6</command></action></keybind>
+    <keybind key="C-A-7"><action name="Execute"><command>vmbox-ctl switch slot 7</command></action></keybind>
+    <keybind key="C-A-8"><action name="Execute"><command>vmbox-ctl switch slot 8</command></action></keybind>
+    <keybind key="C-A-9"><action name="Execute"><command>vmbox-ctl switch slot 9</command></action></keybind>
+  </keyboard>
+  <mouse>
+    <dragThreshold>8</dragThreshold>
+    <doubleClickTime>200</doubleClickTime>
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Middle" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+    </context>
+  </mouse>
+  <applications>
+    <!-- VirtualBox VM windows: no frame, maximised below the VMBox bar -->
+    <application class="VirtualBox*">
+      <decor>no</decor>
+      <maximized>yes</maximized>
+      <focus>yes</focus>
+      <skip_taskbar>yes</skip_taskbar>
+    </application>
+    <application title="VMBox Dashboard">
+      <decor>no</decor>
+      <maximized>yes</maximized>
+    </application>
+    <application title="VMBox Leiste">
+      <decor>no</decor>
+      <layer>above</layer>
+      <desktop>all</desktop>
+    </application>
+  </applications>
+</openbox_config>

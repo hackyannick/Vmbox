@@ -1,0 +1,62 @@
+#!/bin/sh
+# Install Oracle VirtualBox and build its kernel modules for the image kernel.
+set -e
+
+KEYRING=/usr/share/keyrings/oracle-virtualbox-2016.gpg
+CODENAME=$(sed -n 's/^VERSION_CODENAME=//p' /usr/lib/os-release)
+VBOX_DIST=$(cat /usr/share/vmbox/vbox-dist 2>/dev/null || echo "$CODENAME")
+
+[ -s "$KEYRING" ] || { echo "E: $KEYRING fehlt (build.sh lädt den Oracle-Schlüssel)" >&2; exit 1; }
+
+echo "deb [arch=amd64 signed-by=$KEYRING] http://download.virtualbox.org/virtualbox/debian $VBOX_DIST contrib" \
+    >/etc/apt/sources.list.d/virtualbox.list
+apt-get update
+
+PKG=$(cat /usr/share/vmbox/vbox-package 2>/dev/null || true)
+if [ -z "$PKG" ]; then
+    PKG=$(apt-cache pkgnames virtualbox- | grep -E '^virtualbox-[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+fi
+[ -n "$PKG" ] || { echo "E: kein VirtualBox-Paket für $VBOX_DIST gefunden" >&2; exit 1; }
+echo "I: installiere $PKG"
+
+# The package would try to build modules for the *build host's* kernel - we do that ourselves below.
+echo "$PKG virtualbox/module-compilation-allowed boolean false" | debconf-set-selections || true
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$PKG"
+
+SRC=/usr/share/virtualbox/src/vboxhost
+[ -d "$SRC" ] || { echo "E: $SRC fehlt" >&2; exit 1; }
+for kdir in /lib/modules/*; do
+    kver=$(basename "$kdir")
+    if [ ! -e "$kdir/build" ]; then
+        echo "W: keine Kernel-Header für $kver - übersprungen" >&2
+        continue
+    fi
+    echo "I: baue VirtualBox-Module für $kver"
+    tmp=$(mktemp -d)
+    cp -a "$SRC/." "$tmp/"
+    make -C "$tmp" KERN_VER="$kver" KERN_DIR="$kdir/build" -j"$(nproc)"
+    install -d "$kdir/misc"
+    find "$tmp" -maxdepth 1 -name '*.ko' -exec install -m 0644 {} "$kdir/misc/" \;
+    rm -rf "$tmp"
+    depmod -a "$kver"
+    for mod in vboxdrv vboxnetflt vboxnetadp; do
+        modinfo -k "$kver" "$mod" >/dev/null || { echo "E: Modul $mod für $kver fehlt" >&2; exit 1; }
+    done
+done
+
+# Device permissions (normally written by "vboxconfig" on the target machine).
+if [ ! -e /etc/udev/rules.d/60-vboxdrv.rules ]; then
+    cat >/etc/udev/rules.d/60-vboxdrv.rules <<'RULES'
+KERNEL=="vboxdrv", OWNER="root", GROUP="vboxusers", MODE="0660"
+KERNEL=="vboxdrvu", OWNER="root", GROUP="root", MODE="0666"
+KERNEL=="vboxnetctl", OWNER="root", GROUP="vboxusers", MODE="0660"
+SUBSYSTEM=="usb_device", ACTION=="add", RUN+="/usr/lib/virtualbox/VBoxCreateUSBNode.sh $major $minor $attr{bDeviceClass}"
+SUBSYSTEM=="usb", ACTION=="add", ENV{DEVTYPE}=="usb_device", RUN+="/usr/lib/virtualbox/VBoxCreateUSBNode.sh $major $minor $attr{bDeviceClass}"
+SUBSYSTEM=="usb_device", ACTION=="remove", RUN+="/usr/lib/virtualbox/VBoxCreateUSBNode.sh --remove $major $minor"
+SUBSYSTEM=="usb", ACTION=="remove", ENV{DEVTYPE}=="usb_device", RUN+="/usr/lib/virtualbox/VBoxCreateUSBNode.sh --remove $major $minor"
+RULES
+fi
+
+getent group vboxusers >/dev/null || groupadd -r vboxusers
+usermod -aG vboxusers vmbox
+VBoxManage --version

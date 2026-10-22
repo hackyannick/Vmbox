@@ -1,0 +1,30 @@
+#!/bin/sh
+# live-build configuration of the VMBox live/installer ISO.
+set -e
+
+VERSION="$(cat ../VERSION 2>/dev/null || echo dev)"
+
+lb config noauto \
+    --mode debian \
+    --distribution "${VMBOX_DIST:-trixie}" \
+    --architectures amd64 \
+    --archive-areas "main contrib non-free non-free-firmware" \
+    --linux-flavours amd64 \
+    --linux-packages "linux-image linux-headers" \
+    --apt-recommends false \
+    --firmware-binary false \
+    --firmware-chroot false \
+    --security true \
+    --updates true \
+    --debian-installer none \
+    --memtest none \
+    --binary-images iso-hybrid \
+    --bootloaders "syslinux,grub-efi" \
+    --image-name vmbox \
+    --iso-application "VMBox" \
+    --iso-publisher "VMBox" \
+    --iso-volume "VMBox ${VERSION}" \
+    --hdd-label VMBOX \
+    --checksums sha256 \
+    --bootappend-live "boot=live components quiet splash hostname=vmbox locales=de_DE.UTF-8 keyboard-layouts=de timezone=Europe/Berlin live-config.nocomponents=user-setup,sudo,login,xinit,openssh-server" \
+    "${@}"

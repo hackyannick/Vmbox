@@ -1,0 +1,149 @@
+#!/usr/bin/python3
+"""vmbox-ctl - command line client for vmboxd (the VMBox counterpart of OpenXT's ``xec``)."""
+
+import argparse
+import json
+import os
+import sys
+
+for path in ("/usr/lib/vmbox", os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")):
+    if os.path.isdir(os.path.join(path, "vmboxd")):
+        sys.path.insert(0, path)
+        break
+
+from vmboxd.server import unix_request  # noqa: E402
+
+SOCKET = os.environ.get("VMBOX_SOCKET", "/run/vmbox/vmboxd.sock")
+STATE = {"running": "läuft", "paused": "pausiert", "saved": "gespeichert", "stopped": "aus", "busy": "beschäftigt"}
+
+
+def call(method, path, body=None):
+    try:
+        status, data = unix_request(SOCKET, method, path, body)
+    except OSError as exc:
+        sys.exit("vmbox-ctl: vmboxd nicht erreichbar (%s): %s" % (SOCKET, exc))
+    if status >= 400:
+        sys.exit("vmbox-ctl: %s" % data.get("error", status))
+    return data
+
+
+def vm_path(ref):
+    from urllib.parse import quote
+    return "/api/vms/" + quote(ref, safe="")
+
+
+def cmd_list(args):
+    vms = call("GET", "/api/vms")["vms"]
+    if args.json:
+        print(json.dumps(vms, indent=2, ensure_ascii=False))
+        return
+    print("%-4s %-24s %-12s %-8s %-10s %s" % ("SLOT", "NAME", "STATUS", "TYP", "RAM", "UUID"))
+    for vm in vms:
+        print("%-4s %-24s %-12s %-8s %-10s %s" % (vm["slot"] or "-", vm["name"][:24], STATE.get(vm["state"], vm["state"]),
+                                                  vm["type"], "%d MB" % vm["memory"], vm["uuid"]))
+
+
+def cmd_info(args):
+    print(json.dumps(call("GET", vm_path(args.vm)), indent=2, ensure_ascii=False))
+
+
+def cmd_action(args):
+    call("POST", vm_path(args.vm) + "/" + args.action)
+
+
+def cmd_switch(args):
+    target = args.target
+    if target in ("ui", "next", "prev"):
+        call("POST", "/api/switch/" + target)
+    elif target == "slot":
+        call("POST", "/api/switch/slot/%d" % args.slot)
+    else:
+        call("POST", vm_path(target) + "/switch")
+
+
+def cmd_lock(_args):
+    call("POST", "/api/lock")
+
+
+def cmd_save_all(_args):
+    saved = call("POST", "/api/host/save-vms").get("saved", [])
+    print("Gespeichert: %s" % (", ".join(saved) or "keine VM lief"))
+
+
+def cmd_usb(args):
+    if args.usb_cmd == "list":
+        for dev in call("GET", "/api/usb")["devices"]:
+            print("%s  %s  %-32s %s" % (dev["uuid"], dev["id"], (dev["manufacturer"] + " " + dev["product"]).strip()[:32],
+                                        dev["vm"] or "-"))
+    elif args.usb_cmd == "assign":
+        vm = call("GET", vm_path(args.vm))
+        call("POST", "/api/usb/%s/assign" % args.device, {"vm": vm["uuid"], "force": args.force})
+    elif args.usb_cmd == "release":
+        call("POST", "/api/usb/%s/release" % args.device)
+
+
+def cmd_snapshot(args):
+    vm = call("GET", vm_path(args.vm))
+    base = "/api/vms/%s/snapshots" % vm["uuid"]
+    if args.snap_cmd == "list":
+        for snap in call("GET", base)["snapshots"]:
+            print("%s%s %s%s" % ("  " * snap["depth"], snap["uuid"], snap["name"], " *" if snap["current"] else ""))
+        return
+    if args.snap_cmd == "take":
+        call("POST", base, {"name": args.name})
+        return
+    snaps = [s for s in call("GET", base)["snapshots"] if args.name in (s["name"], s["uuid"])]
+    if not snaps:
+        sys.exit("vmbox-ctl: Snapshot nicht gefunden")
+    if args.snap_cmd == "restore":
+        call("POST", "%s/%s/restore" % (base, snaps[0]["uuid"]))
+    else:
+        call("DELETE", "%s/%s" % (base, snaps[0]["uuid"]))
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="vmbox-ctl", description="VMBox steuern")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("list", help="VMs auflisten")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_list)
+    p = sub.add_parser("info", help="Details einer VM")
+    p.add_argument("vm", help="Name, Slot oder UUID")
+    p.set_defaults(func=cmd_info)
+    for action in ("start", "shutdown", "poweroff", "pause", "resume", "reboot", "save"):
+        p = sub.add_parser(action, help="VM: %s" % action)
+        p.add_argument("vm", help="Name, Slot oder UUID")
+        p.set_defaults(func=cmd_action, action=action)
+    p = sub.add_parser("switch", help="Anzeige umschalten: ui | next | prev | slot N | <vm>")
+    p.add_argument("target")
+    p.add_argument("slot", nargs="?", type=int)
+    p.set_defaults(func=cmd_switch)
+    sub.add_parser("lock", help="Bildschirm sperren").set_defaults(func=cmd_lock)
+    sub.add_parser("save-all", help="Zustand aller laufenden VMs speichern").set_defaults(func=cmd_save_all)
+    p = sub.add_parser("usb", help="USB-Geräte")
+    usb = p.add_subparsers(dest="usb_cmd", required=True)
+    usb.add_parser("list")
+    q = usb.add_parser("assign")
+    q.add_argument("device")
+    q.add_argument("vm")
+    q.add_argument("--force", action="store_true", help="auch Eingabegeräte zuweisen")
+    q = usb.add_parser("release")
+    q.add_argument("device")
+    p.set_defaults(func=cmd_usb)
+    p = sub.add_parser("snapshot", help="Snapshots")
+    snap = p.add_subparsers(dest="snap_cmd", required=True)
+    q = snap.add_parser("list")
+    q.add_argument("vm")
+    for name in ("take", "restore", "delete"):
+        q = snap.add_parser(name)
+        q.add_argument("vm")
+        q.add_argument("name")
+    p.set_defaults(func=cmd_snapshot)
+    args = parser.parse_args()
+    if args.cmd == "switch" and args.target == "slot" and not args.slot:
+        parser.error("switch slot benötigt eine Nummer")
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

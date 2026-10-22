@@ -1,0 +1,11 @@
+[Unit]
+Description=Start the VMBox installer (boot option "VMBox installieren")
+ConditionKernelCommandLine=vmbox.install
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl --no-block start vmbox-installer.service
+
+[Install]
+WantedBy=multi-user.target

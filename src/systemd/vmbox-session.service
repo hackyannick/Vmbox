@@ -1,0 +1,27 @@
+[Unit]
+Description=VMBox graphical session
+After=systemd-user-sessions.service plymouth-quit-wait.service getty-pre.target
+Conflicts=getty@tty1.service
+RequiresMountsFor=/home/vmbox
+ConditionKernelCommandLine=!vmbox.install
+
+[Service]
+User=vmbox
+Group=vmbox
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+WorkingDirectory=/home/vmbox
+ExecStart=/usr/lib/vmbox/vmbox-xstart
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,68 @@
+#!/bin/sh
+# Brand the live boot menus (GRUB for UEFI, ISOLINUX for BIOS) and add a
+# "VMBox installieren" entry that boots straight into the installer.
+set -e
+
+[ -d binary ] && cd binary
+SPLASH=.vmbox/splash.png
+
+if [ -f "$SPLASH" ]; then
+    find boot/grub isolinux -name 'splash.png' 2>/dev/null | while read -r f; do
+        echo "I: ersetze $f"
+        cp "$SPLASH" "$f"
+    done
+    rm -rf .vmbox
+fi
+
+# GRUB: duplicate the first menuentry as installer entry.
+if [ -f boot/grub/grub.cfg ]; then
+    awk '
+        !done && !inblk && /^[ \t]*menuentry / { inblk = 1; blk = "" }
+        { print; if (inblk) blk = blk $0 "\n" }
+        inblk && /^[ \t]*}[ \t]*$/ {
+            inblk = 0; done = 1
+            n = split(blk, lines, "\n")
+            for (i = 1; i < n; i++) {
+                l = lines[i]
+                if (l ~ /^[ \t]*menuentry /) {
+                    sub(/"[^"]*"/, "\"VMBox installieren\"", l)
+                    sub(/'"'"'[^'"'"']*'"'"'/, "\"VMBox installieren\"", l)
+                    gsub(/ --hotkey=[^ ]+/, "", l)
+                }
+                if (l ~ /^[ \t]*linux[ \t]/) l = l " vmbox.install"
+                print l
+            }
+        }
+    ' boot/grub/grub.cfg >boot/grub/grub.cfg.new
+    mv boot/grub/grub.cfg.new boot/grub/grub.cfg
+    sed -i 's/Live system/VMBox Live/g' boot/grub/grub.cfg
+    grep -q vmbox.install boot/grub/grub.cfg && echo "I: GRUB-Installer-Eintrag hinzugefügt" || echo "W: GRUB-Menü unverändert"
+fi
+
+# ISOLINUX: duplicate the first "label" block.
+for cfg in isolinux/live.cfg syslinux/live.cfg; do
+    [ -f "$cfg" ] || continue
+    awk '
+        function flush() {
+            if (!have) return
+            n = split(blk, lines, "\n")
+            for (i = 1; i < n; i++) {
+                l = lines[i]
+                if (l ~ /^[ \t]*label /) l = "label vmbox-install"
+                else if (l ~ /menu label/) { sub(/menu label.*/, "menu label VMBox ^installieren", l) }
+                else if (l ~ /menu default/) continue
+                else if (l ~ /^[ \t]*append /) l = l " vmbox.install"
+                print l
+            }
+            print ""
+            have = 0; done = 1
+        }
+        !done && /^[ \t]*label / { if (inblk) flush(); inblk = 1; have = 1; blk = "" }
+        inblk && !done && (/^[ \t]*$/ ) { print; flush(); inblk = 0; next }
+        { print; if (inblk && !done) blk = blk $0 "\n" }
+        END { if (inblk && !done) { print ""; flush() } }
+    ' "$cfg" >"$cfg.new"
+    mv "$cfg.new" "$cfg"
+    sed -i 's/Live system/VMBox Live/g' "$cfg"
+    grep -q vmbox.install "$cfg" && echo "I: ISOLINUX-Installer-Eintrag in $cfg" || echo "W: $cfg unverändert"
+done
