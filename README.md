@@ -107,11 +107,17 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
 | `Strg+Alt+←` / `→` | durch Dashboard und laufende VMs blättern |
 | `Strg+Alt+L` | Bildschirm sperren |
 
-* **Neue VM:** Vorlage wählen (Windows 11/10/7, Ubuntu, Debian, Fedora, Linux,
+* **Neue VM:** Vorlage wählen (Windows 11/10/7/XP/2000, Ubuntu, Debian, Fedora, Linux,
   Service-VM), Name, Farbe, Ressourcen, ISO und Netzwerk festlegen. Windows 11
   bekommt automatisch UEFI, Secure Boot und ein virtuelles TPM 2.0; Windows 7
   bekommt BIOS, USB 2.0 und eine Intel-PRO/1000-Netzwerkkarte, für die es
   eigene Treiber mitbringt.
+* **Windows XP und 2000** bekommen zeitgemäße Hardware, für die sie Treiber
+  mitbringen: IDE-Controller, PCnet-FAST-III-Netzwerkkarte, AC'97-Ton,
+  PS/2-Maus und VBoxVGA (ohne 3D). Weil es keine Sicherheitsupdates mehr gibt,
+  starten sie ohne Netzwerk; bei Bedarf am besten nur an ein internes Netz
+  hängen. Die aktuellen Gasterweiterungen unterstützen diese Systeme teils
+  nicht mehr – dann eine ältere Version der Gasterweiterungen verwenden.
 * **3D-Beschleunigung** ist bei allen Arbeits-VMs eingeschaltet (VBoxSVGA bzw.
   VMSVGA, 256 MB Grafikspeicher bei Windows) und lässt sich unter
   *Hardware* abschalten. Sie wirkt erst, wenn im Gast die VirtualBox-

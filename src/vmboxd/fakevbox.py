@@ -176,7 +176,8 @@ class FakeVBoxManage:
         "--nat-localhostreachable1": "natlocalhostreachable1", "--tpm-type": "tpm_type",
         "--graphicscontroller": "graphicscontroller", "--vram": "vram", "--drag-and-drop": "draganddrop",
         "--accelerate-3d": "accelerate3d", "--nictype1": "nictype1",
-        "--usb-ehci": "ehci", "--usb-ohci": "usb",
+        "--usb-ehci": "ehci", "--usb-ohci": "usb", "--audio-controller": "audiocontroller",
+        "--mouse": "mouse", "--ioapic": "ioapic",
     }
 
     def cmd_modifyvm(self, rest):

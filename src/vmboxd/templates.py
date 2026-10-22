@@ -3,6 +3,11 @@
 ``usb`` selects the USB controller the guest has drivers for (Windows 7
 has no xHCI driver, so it gets EHCI/OHCI - otherwise the USB tablet mouse
 would not work during setup).  ``nic`` is the emulated network card.
+
+Windows XP and 2000 need period hardware they ship drivers for: an IDE
+controller (no AHCI driver), the PCnet-FAST III network card, AC'97 sound,
+a PS/2 mouse and the legacy VBoxVGA adapter (no 3D).  As they no longer get
+security updates they start without network by default.
 """
 
 TEMPLATES = [
@@ -15,6 +20,14 @@ TEMPLATES = [
     {"id": "windows7", "label": "Windows 7", "ostype": "Windows7_64", "memory": 4096, "cpus": 2,
      "disk_gb": 50, "firmware": "bios", "tpm": False, "secure_boot": False, "graphics": "vboxsvga", "vram": 256,
      "accelerate3d": True, "usb": "ehci", "nic": "82540EM", "family": "windows"},
+    {"id": "windowsxp", "label": "Windows XP", "ostype": "WindowsXP", "memory": 1024, "cpus": 1,
+     "disk_gb": 20, "firmware": "bios", "tpm": False, "secure_boot": False, "graphics": "vboxvga", "vram": 64,
+     "accelerate3d": False, "usb": "ehci", "nic": "Am79C973", "storage": "ide", "audio": "ac97",
+     "mouse": "ps2", "network": "none", "legacy": True, "family": "windows"},
+    {"id": "windows2000", "label": "Windows 2000", "ostype": "Windows2000", "memory": 512, "cpus": 1,
+     "disk_gb": 10, "firmware": "bios", "tpm": False, "secure_boot": False, "graphics": "vboxvga", "vram": 32,
+     "accelerate3d": False, "usb": "ehci", "nic": "Am79C973", "storage": "ide", "audio": "ac97",
+     "mouse": "ps2", "ioapic": False, "network": "none", "legacy": True, "family": "windows"},
     {"id": "ubuntu", "label": "Ubuntu", "ostype": "Ubuntu_64", "memory": 4096, "cpus": 2,
      "disk_gb": 40, "firmware": "efi", "tpm": False, "secure_boot": False, "graphics": "vmsvga", "vram": 128,
      "accelerate3d": True, "usb": "xhci", "nic": "virtio", "family": "linux"},

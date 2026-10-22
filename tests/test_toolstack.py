@@ -57,6 +57,28 @@ class ToolstackTest(unittest.TestCase):
         self.ts.action(vm["uuid"], "start")
         self.assertEqual(self.vbox.vm_info(vm["uuid"])["ehci"], "on")
 
+    def test_legacy_windows_templates_use_period_hardware(self):
+        for template, ioapic in (("windowsxp", "on"), ("windows2000", "off")):
+            vm = self.create(template, template=template)
+            info = self.vbox.vm_info(vm["uuid"])
+            self.assertEqual(vm["controller"], "IDE")
+            self.assertTrue(vm["disk"].endswith(".vdi"))
+            self.assertEqual(info["IDE-1-0"], "emptydrive")
+            self.assertEqual(info["graphicscontroller"], "vboxvga")
+            self.assertEqual(info["nictype1"], "Am79C973")
+            self.assertEqual(info["audiocontroller"], "ac97")
+            self.assertEqual(info["mouse"], "ps2")
+            self.assertEqual(info["ioapic"], ioapic)
+            self.assertEqual(vm["network"], "none")
+            self.assertFalse(vm["accelerate3d"])
+            with self.assertRaises(ToolstackError):
+                self.ts.update_vm(vm["uuid"], {"accelerate3d": True})
+            # ISO hot-swap and the CD policy work on the IDE controller too
+            with open(os.path.join(self.iso_dir, "xp.iso"), "w") as fh:
+                fh.write("x")
+            self.ts.update_vm(vm["uuid"], {"iso": "xp.iso"})
+            self.assertTrue(self.ts.get_vm(vm["uuid"])["iso"].endswith("xp.iso"))
+
     def test_3d_can_be_toggled_while_stopped(self):
         vm = self.create(template="linux")
         self.assertTrue(vm["accelerate3d"])

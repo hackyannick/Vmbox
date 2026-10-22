@@ -27,7 +27,8 @@ CLIPBOARD_MODES = {
 NAME_RE = re.compile(r"^[\w][\w .()+-]{0,63}$", re.UNICODE)
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 USB_ID_RE = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{4}$")
-DISK_CTL = "SATA"
+# Storage controllers by template "storage" type: (name, bus, chipset, ports)
+CONTROLLERS = {"sata": ("SATA", "sata", "IntelAhci", 2), "ide": ("IDE", "ide", "PIIX4", None)}
 
 # Global VirtualBox GUI settings: no update checks, no nag dialogs, no
 # automatic keyboard capture (so the VMBox switch hotkeys keep working).
@@ -104,8 +105,9 @@ class Toolstack:
             return extra.get(P + key, default)
 
         state = STATE_MAP.get(info.get("VMState", "poweroff"), "busy")
-        disk = info.get("%s-0-0" % DISK_CTL, "none")
-        dvd = info.get("%s-1-0" % DISK_CTL, "none")
+        ctl = "IDE" if "IDE-0-0" in info or "IDE-1-0" in info else "SATA"
+        disk = info.get("%s-0-0" % ctl, "none")
+        dvd = info.get("%s-1-0" % ctl, "none")
         nic = info.get("nic1", "none")
         if nic == "bridged":
             network = "bridged:" + info.get("bridgeadapter1", "")
@@ -118,6 +120,7 @@ class Toolstack:
         sticky = [s for s in x("USB/Sticky", "").split(",") if s]
         return {
             "uuid": uuid,
+            "controller": ctl,
             "name": info.get("name", "?"),
             "description": info.get("description", ""),
             "state": state,
@@ -288,7 +291,7 @@ class Toolstack:
             policy = {"usb": True, "cd": True, "audio": vmtype == "user", "clipboard": "off"}
             policy.update(spec.get("policy") or {})
             iso = self._resolve_iso(spec.get("iso"))
-            network_args = self._network_args(spec.get("network") or "nat")
+            network_args = self._network_args(spec.get("network") or template.get("network", "nat"))
             policy_args = self._policy_args(policy, template.get("usb", "xhci"))
 
             uuid = self.vbox.create_vm(name, template["ostype"])
@@ -301,8 +304,10 @@ class Toolstack:
                     "--graphicscontroller", template["graphics"], "--vram", template["vram"],
                     "--accelerate-3d", "on" if template.get("accelerate3d") else "off",
                     "--nictype1", template.get("nic", "82540EM"),
-                    "--ioapic", "on", "--rtc-use-utc", "on" if template["family"] != "windows" else "off",
-                    "--mouse", "usbtablet",
+                    "--ioapic", "on" if template.get("ioapic", True) else "off",
+                    "--rtc-use-utc", "on" if template["family"] != "windows" else "off",
+                    "--mouse", template.get("mouse", "usbtablet"),
+                    "--audio-controller", template.get("audio", "hda"),
                     "--description", str(spec.get("description", ""))[:500],
                     *network_args, *policy_args, *self._hardening_args(),
                 )
@@ -312,10 +317,11 @@ class Toolstack:
                 vm_dir = os.path.dirname(cfg) if cfg else os.path.join(os.path.dirname(self.iso_dir), "vms", name)
                 disk = os.path.join(vm_dir, "%s.vdi" % name)
                 self.vbox.create_disk(disk, disk_gb * 1024)
-                self.vbox.storagectl(uuid, DISK_CTL, "sata", controller="IntelAhci", ports=2)
-                self.vbox.storageattach(uuid, DISK_CTL, 0, "hdd", disk)
+                ctl, bus, chipset, ports = CONTROLLERS[template.get("storage", "sata")]
+                self.vbox.storagectl(uuid, ctl, bus, controller=chipset, ports=ports)
+                self.vbox.storageattach(uuid, ctl, 0, "hdd", disk)
                 if policy.get("cd", True):
-                    self.vbox.storageattach(uuid, DISK_CTL, 1, "dvddrive", iso or "emptydrive")
+                    self.vbox.storageattach(uuid, ctl, 1, "dvddrive", iso or "emptydrive")
                 if template.get("secure_boot"):
                     self.vbox.modifynvram(uuid, "inituefivarstore")
                     self.vbox.modifynvram(uuid, "enrollmssignatures")
@@ -372,6 +378,8 @@ class Toolstack:
                 modify += ["--cpus", int(changes["cpus"])]
             if "accelerate3d" in changes and bool(changes["accelerate3d"]) != vm["accelerate3d"]:
                 needs_stop("Die 3D-Beschleunigung")
+                if changes["accelerate3d"] and TEMPLATES.get(vm["template"], {}).get("legacy"):
+                    raise ToolstackError("Für Windows XP/2000 gibt es keine 3D-Beschleunigung")
                 modify += ["--accelerate-3d", "on" if changes["accelerate3d"] else "off"]
                 if changes["accelerate3d"] and vm["vram"] < 128:
                     modify += ["--vram", 128]
@@ -411,9 +419,9 @@ class Toolstack:
                         self.vbox.control(uuid, "clipboard", "mode", CLIPBOARD_MODES[policy["clipboard"]])
                 if policy["cd"] != vm["policy"]["cd"]:
                     if policy["cd"]:
-                        self.vbox.storageattach(uuid, DISK_CTL, 1, "dvddrive", "emptydrive")
+                        self.vbox.storageattach(uuid, vm["controller"], 1, "dvddrive", "emptydrive")
                     else:
-                        self.vbox.storageattach(uuid, DISK_CTL, 1, "dvddrive", "none")
+                        self.vbox.storageattach(uuid, vm["controller"], 1, "dvddrive", "none")
                 meta.update({
                     "Policy/USB": _flag(policy["usb"]), "Policy/CD": _flag(policy["cd"]),
                     "Policy/Audio": _flag(policy["audio"]), "Policy/Clipboard": policy["clipboard"],
@@ -422,10 +430,10 @@ class Toolstack:
                 needs_stop("Der Wegwerf-Modus")
                 if not vm["disk"]:
                     raise ToolstackError("Die VM hat keine Festplatte")
-                self.vbox.storageattach(uuid, DISK_CTL, 0, "hdd", "none")
+                self.vbox.storageattach(uuid, vm["controller"], 0, "hdd", "none")
                 self.vbox.run("modifymedium", "disk", vm["disk"], "--type",
                               "immutable" if changes["disposable"] else "normal")
-                self.vbox.storageattach(uuid, DISK_CTL, 0, "hdd", vm["disk"])
+                self.vbox.storageattach(uuid, vm["controller"], 0, "hdd", vm["disk"])
                 meta["Disposable"] = _flag(changes["disposable"])
             if "sticky_usb" in changes:
                 ids = [str(s).lower() for s in changes["sticky_usb"] or []]
@@ -437,7 +445,7 @@ class Toolstack:
                     raise ToolstackError("CD/DVD ist für diese VM per Richtlinie deaktiviert", 403)
                 if vm["policy"]["cd"]:
                     medium = self._resolve_iso(changes["iso"]) or "emptydrive"
-                    self.vbox.storageattach(uuid, DISK_CTL, 1, "dvddrive", medium)
+                    self.vbox.storageattach(uuid, vm["controller"], 1, "dvddrive", medium)
 
             if modify:
                 self.vbox.modify(uuid, *modify)
@@ -479,7 +487,7 @@ class Toolstack:
             args += ["--nat-localhostreachable1", "off"]
         self.vbox.modify(vm["uuid"], *args)
         if not vm["policy"]["cd"] and vm["iso"]:
-            self.vbox.storageattach(vm["uuid"], DISK_CTL, 1, "dvddrive", "none")
+            self.vbox.storageattach(vm["uuid"], vm["controller"], 1, "dvddrive", "none")
         for key, value in VM_GUI_EXTRADATA.items():
             self.vbox.set_extradata(vm["uuid"], key, value)
 

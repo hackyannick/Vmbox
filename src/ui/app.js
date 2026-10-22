@@ -98,6 +98,7 @@ function networkLabel(id) {
   return { bridged: "Brücke ", intnet: "Intern ", hostonly: "Host-only " }[kind] + arg;
 }
 const vmById = (uuid) => (S.state && S.state.vms || []).find((v) => v.uuid === uuid);
+const isLegacy = (vm) => !!((S.templates || []).find((t) => t.id === vm.template) || {}).legacy;
 const templateLabel = (vm) => {
   const t = (S.templates || []).find((t) => t.id === vm.template);
   return t ? t.label : vm.ostype;
@@ -419,7 +420,7 @@ async function openCreate() {
     S.networks = (await api("GET", "/api/networks")).networks;
   } catch (e) { toast(e.message, true); return; }
   const tpl = S.templates[0];
-  const draft = { template: tpl.id, name: "", memory: tpl.memory, cpus: tpl.cpus, disk_gb: tpl.disk_gb, iso: "", network: "nat",
+  const draft = { template: tpl.id, name: "", memory: tpl.memory, cpus: tpl.cpus, disk_gb: tpl.disk_gb, iso: "", network: tpl.network || "nat",
     color: S.colors[(S.state.vms || []).length % S.colors.length] };
   const render = () => {
     const t = S.templates.find((x) => x.id === draft.template);
@@ -439,7 +440,10 @@ async function openCreate() {
       '<div class="field"><label>Netzwerk</label><select class="input" name="network">' + S.networks.map((n) =>
         '<option value="' + esc(n.id) + '" ' + (n.id === draft.network ? "selected" : "") + ">" + esc(n.label) + "</option>").join("") + "</select></div></div>" +
       (t.tpm ? '<div class="notice">Diese Vorlage erhält UEFI, Secure Boot und ein virtuelles TPM 2.0.</div>' : "") +
-      (t.id === "windows7" ? '<div class="notice">Windows 7 erhält BIOS-Firmware, USB 2.0 und eine Intel-PRO/1000-Netzwerkkarte, für die Windows 7 eigene Treiber mitbringt. Für 3D und Aero nach der Installation die VirtualBox-Gasterweiterungen installieren.</div>' :
+      (t.legacy ? '<div class="notice warn">' + esc(t.label) + " bekommt passende Alt-Hardware (IDE, PCnet-Netzwerkkarte, AC’97-Ton, PS/2-Maus, VBoxVGA). " +
+        "Da es keine Sicherheitsupdates mehr gibt, startet die VM ohne Netzwerk – bei Bedarf oben ändern, am besten auf ein internes Netz. " +
+        "3D-Beschleunigung gibt es hier nicht; die aktuellen Gasterweiterungen unterstützen dieses System teils nicht mehr.</div>" :
+       t.id === "windows7" ? '<div class="notice">Windows 7 erhält BIOS-Firmware, USB 2.0 und eine Intel-PRO/1000-Netzwerkkarte, für die Windows 7 eigene Treiber mitbringt. Für 3D und Aero nach der Installation die VirtualBox-Gasterweiterungen installieren.</div>' :
        t.accelerate3d ? '<div class="notice">3D-Beschleunigung ist aktiv. Sie wirkt, sobald im Gast die VirtualBox-Gasterweiterungen installiert sind.</div>' : "") +
       (t.type === "service" ? '<div class="notice">Service-VMs laufen ohne Anzeige im Hintergrund (z. B. als Netzwerk- oder Firewall-VM) und starten automatisch.</div>' : "") +
       '</div><div class="modal-foot"><button type="button" class="btn ghost" data-close>Abbrechen</button>' +
@@ -451,7 +455,7 @@ async function openCreate() {
       const colBtn = ev.target.closest("[data-color]");
       if (tplBtn) {
         const nt = S.templates.find((x) => x.id === tplBtn.dataset.tpl);
-        Object.assign(draft, { template: nt.id, memory: nt.memory, cpus: nt.cpus, disk_gb: nt.disk_gb });
+        Object.assign(draft, { template: nt.id, memory: nt.memory, cpus: nt.cpus, disk_gb: nt.disk_gb, network: nt.network || "nat" });
         render();
       } else if (colBtn) {
         draft.color = colBtn.dataset.color;
@@ -537,7 +541,7 @@ async function renderDrawer() {
       '</select><span class="hint">Kann auch im laufenden Betrieb gewechselt werden.</span></div>' +
       '<dl class="kv" style="margin:18px 0"><dt>Festplatte</dt><dd>' + esc(vm.disk || "–") + "</dd><dt>Firmware</dt><dd>" + esc(vm.firmware.toUpperCase()) +
       "</dd><dt>Grafikspeicher</dt><dd>" + vm.vram + " MB</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
-      switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off)) +
+      switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off || isLegacy(vm))) +
       switchRow("Wegwerf-Modus", "Alle Änderungen an der Festplatte werden beim Ausschalten verworfen (unveränderliches Abbild).", toggle("disposable", d.disposable, !off));
   } else if (tab === "policy") {
     body += '<div class="field"><label>Netzwerk</label><select class="input" data-field="network">' + S.networks.map((n) =>
