@@ -72,7 +72,7 @@ jobs:
                    /misc/vboxdrv.ko /misc/vboxnetflt.ko /misc/vboxnetadp.ko \
                    /usr/lib/vmbox/vmboxd/server.py /usr/bin/vmbox-shell /usr/sbin/vmbox-installer \
                    /usr/share/vmbox/ui/index.html /etc/systemd/system/multi-user.target.wants/vmboxd.service \
-                   /etc/systemd/system/multi-user.target.wants/vmbox-session.service /usr/bin/openbox /usr/bin/wmctrl \\
+                   /etc/systemd/system/multi-user.target.wants/vmbox-session.service /usr/bin/openbox /usr/bin/wmctrl \
                    /usr/bin/udisksctl /usr/sbin/mkfs.exfat /usr/bin/ntfs-3g /usr/lib/vmbox/vmboxd/media.py; do
             if grep -q -- "$f\$" "$WORK/files.txt"; then echo "OK      $f"; else echo "FEHLT   $f"; FAIL=1; fi
           done
