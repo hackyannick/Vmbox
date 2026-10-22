@@ -10,6 +10,7 @@ from .auth import Auth
 from .display import VirtualDisplay, X11Display
 from .fakevbox import FakeVBoxManage
 from .host import FakeHost, Host
+from .media import FakeMedia, Media
 from .server import App, serve
 from .toolstack import Toolstack
 from .vbox import VBoxManage
@@ -29,15 +30,17 @@ def build_app(cfg):
         vbox = VBoxManage(runner=fake)
         display = VirtualDisplay(running=vbox.running_vms)
         host = FakeHost(cfg.state_dir, vbox.version, live=cfg.live)
+        media = FakeMedia(cfg.iso_dir, os.path.join(cfg.state_dir, "demo-stick"))
     else:
         vbox = VBoxManage(cfg.vboxmanage, gui_env={"DISPLAY": cfg.display, "XAUTHORITY": cfg.xauthority})
         display = X11Display(cfg.display, cfg.xauthority)
         host = Host(cfg.state_dir, vbox.version, live=cfg.live)
+        media = Media(cfg.iso_dir)
     os.makedirs(cfg.iso_dir, exist_ok=True)
     toolstack = Toolstack(vbox, display, cfg.iso_dir)
     auth = Auth(cfg.auth_file, cfg.session_timeout)
     auth.locked = True
-    return App(cfg, toolstack, auth, host)
+    return App(cfg, toolstack, auth, host, media)
 
 
 def main(argv=None):

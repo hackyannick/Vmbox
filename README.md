@@ -124,7 +124,12 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   Gasterweiterungen installiert sind (bei Windows 7 nötig für Aero). Auf dem
   Host nutzt VirtualBox dafür Mesa (OpenGL/Vulkan); proprietäre
   NVIDIA-Treiber sind nicht im Image.
-* **ISO-Abbilder** werden im Dashboard per Drag & Drop hochgeladen.
+* **ISO-Abbilder** kommen per **USB-Stick** in die Bibliothek: Stick einstecken,
+  unter *ISO-Abbilder → Von USB-Stick importieren* „ISO-Dateien anzeigen“,
+  „Importieren“, danach „Auswerfen“. Unterstützt werden exFAT, NTFS, FAT32,
+  ext2/3/4, Btrfs, XFS, ISO 9660 und UDF. Der Host bindet Sticks nie von sich
+  aus ein, sondern erst auf Klick – schreibgeschützt und ohne Ausführrechte;
+  der VMBox-Boot-Stick und interne Festplatten werden nicht angeboten.
 * **VM-Einstellungen** (⋯ an der Karte): Allgemein, Hardware, Netzwerk &
   Richtlinien, Snapshots, USB.
 * **Beenden** einer VM: Herunterfahren (ACPI), Zustand speichern oder

@@ -58,11 +58,12 @@ def _uuid(value):
 class App:
     """Glue between HTTP handlers, the toolstack, authentication and the host."""
 
-    def __init__(self, cfg, toolstack, auth, host):
+    def __init__(self, cfg, toolstack, auth, host, media=None):
         self.cfg = cfg
         self.toolstack = toolstack
         self.auth = auth
         self.host = host
+        self.media = media
         self.started = time.time()
         self._autostarted_user_vms = False
         toolstack.is_locked = lambda: self.auth.locked
@@ -531,6 +532,35 @@ def api_upload_iso(h):
 @route("DELETE", r"/api/isos/([^/]+)")
 def api_delete_iso(h, name):
     h.app.toolstack.delete_iso(urllib.parse.unquote(name))
+    h._json(200, {"ok": True})
+
+
+def _media(h):
+    if h.app.media is None:
+        raise ApiError("Wechseldatenträger werden nicht unterstützt", 404)
+    return h.app.media
+
+
+@route("GET", r"/api/media")
+def api_media(h):
+    media = _media(h)
+    h._json(200, {"devices": media.devices(), "jobs": media.job_list()})
+
+
+@route("POST", r"/api/media/isos")
+def api_media_isos(h):
+    h._json(200, {"isos": _media(h).isos(str(h._body().get("device", "")))})
+
+
+@route("POST", r"/api/media/import")
+def api_media_import(h):
+    body = h._body()
+    h._json(202, _media(h).start_import(str(body.get("device", "")), body.get("file")))
+
+
+@route("POST", r"/api/media/eject")
+def api_media_eject(h):
+    _media(h).eject(str(h._body().get("device", "")))
     h._json(200, {"ok": True})
 
 

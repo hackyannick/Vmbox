@@ -24,6 +24,8 @@ const S = {
   isos: [],
   networks: [],
   usb: [],
+  media: { devices: [], jobs: [] },
+  mediaIsos: {},
   wifi: null,
   showHidden: false,
   drawer: null,
@@ -152,11 +154,16 @@ async function loadPage() {
       S.networks = (await api("GET", "/api/networks")).networks;
       try { S.wifi = await api("GET", "/api/wifi"); } catch (e) { S.wifi = { networks: [], devices: [], error: e.message }; }
     }
-    if (S.page === "isos") S.isos = (await api("GET", "/api/isos")).isos;
+    if (S.page === "isos") {
+      S.isos = (await api("GET", "/api/isos")).isos;
+      try { S.media = await api("GET", "/api/media"); } catch (e) { S.media = { devices: [], jobs: [], error: e.message }; }
+      const present = S.media.devices.map((d) => d.device);
+      Object.keys(S.mediaIsos).forEach((dev) => { if (!present.includes(dev)) delete S.mediaIsos[dev]; });
+    }
   } catch (e) { /* handled by poll */ }
   renderPage();
 }
-setInterval(() => { if (S.page === "usb") loadPage(); }, 3000);
+setInterval(() => { if (S.page === "usb" || S.page === "isos") loadPage(); }, 2000);
 
 /* ------------------------------------------------------------------ */
 /* Auth screen                                                         */
@@ -750,8 +757,47 @@ function renderNetwork() {
 /* ------------------------------------------------------------------ */
 /* ISO page                                                            */
 /* ------------------------------------------------------------------ */
+function renderMedia() {
+  const m = S.media;
+  const inLibrary = (file) => S.isos.some((i) => i.name === file.split("/").pop().replace(/[^\w.+-]/g, "_"));
+  const running = (dev, file) => m.jobs.some((j) => j.device === dev && j.state === "running" && j.name === file.split("/").pop().replace(/[^\w.+-]/g, "_"));
+  let html = '<div class="section-title">Von USB-Stick importieren</div><div class="glass list" style="margin-bottom:22px">';
+  if (!m.devices.length) {
+    html += '<div class="empty" style="padding:28px">' + icon("usb") + "<div>" + esc(m.error || "Kein USB-Stick gefunden. Stick einstecken (exFAT, NTFS, FAT32, ext4 …) – er wird nur gelesen, nie verändert.") + "</div></div>";
+  }
+  m.devices.forEach((d) => {
+    const isos = S.mediaIsos[d.device];
+    html += '<div class="list-item"><div class="lead">' + icon("usb") + '</div><div class="main"><strong>' + esc(d.label) + "</strong><span>" +
+      esc(d.fstype) + " · " + fmtBytes(d.size) + (d.model ? " · " + esc(d.model) : "") + '</span></div><div class="side">' +
+      (isos ? '<button class="btn small" data-act="media-close" data-device="' + esc(d.device) + '">Ausblenden</button>'
+        : '<button class="btn small primary" data-act="media-open" data-device="' + esc(d.device) + '">' + icon("disc") + "ISO-Dateien anzeigen</button>") +
+      '<button class="btn small" data-act="media-eject" data-device="' + esc(d.device) + '">Auswerfen</button></div></div>';
+    if (isos) {
+      html += isos.length ? isos.map((f) => '<div class="list-item" style="padding-left:76px"><div class="main"><strong>' + esc(f.file.split("/").pop()) +
+        "</strong><span>" + esc(f.file) + " · " + fmtBytes(f.size) + '</span></div><div class="side">' +
+        (inLibrary(f.file) ? '<span class="yes">In der Bibliothek</span>' : running(d.device, f.file) ? '<span class="badge blue">Wird kopiert …</span>'
+          : '<button class="btn small" data-act="media-import" data-device="' + esc(d.device) + '" data-file="' + esc(f.file) + '">' + icon("download") + "Importieren</button>") +
+        "</div></div>").join("") : '<div class="empty" style="padding:20px">Keine .iso-Dateien auf diesem Stick gefunden.</div>';
+    }
+  });
+  html += "</div>";
+  const jobs = m.jobs.filter((j) => j.state !== "done" || Date.now() / 1000 - j.started < 600);
+  if (jobs.length) {
+    html += '<div class="glass list" style="margin-bottom:22px">' + jobs.map((j) => {
+      const pct = j.size ? Math.floor((j.copied / j.size) * 100) : 0;
+      return '<div class="list-item"><div class="lead">' + icon(j.state === "failed" ? "alert" : j.state === "done" ? "check" : "download") + '</div><div class="main"><strong>' +
+        esc(j.name) + "</strong><span>" + (j.state === "running" ? pct + " % · " + fmtBytes(j.copied) + " von " + fmtBytes(j.size)
+          : j.state === "done" ? "Importiert" : '<span class="no">' + esc(j.error) + "</span>") + "</span>" +
+        (j.state === "running" ? '<div class="progress"><div style="width:' + pct + '%"></div></div>' : "") + "</div></div>";
+    }).join("") + "</div>";
+  }
+  return html;
+}
+
 function renderISOs() {
   let html = pageHead("ISO-Abbilder", "Installationsmedien für deine virtuellen Maschinen.");
+  html += renderMedia();
+  html += '<div class="section-title">Bibliothek</div>';
   html += '<div class="dropzone" id="dropzone" data-act="upload">' + icon("upload") + "<div><strong>ISO-Datei hierher ziehen</strong> oder klicken, um eine Datei auszuwählen</div>" +
     '<div class="progress" id="upload-progress" hidden><div></div></div></div>';
   html += '<div class="glass list">' + (S.isos.length ? S.isos.map((i) => '<div class="list-item"><div class="lead">' + icon("disc") + '</div><div class="main"><strong>' +
@@ -839,6 +885,21 @@ async function pageAction(act, el) {
       run(api("DELETE", "/api/isos/" + encodeURIComponent(el.dataset.name)), "Abbild gelöscht").then(loadPage).catch(() => {});
     }
     return;
+  }
+  if (act === "media-open") {
+    el.disabled = true;
+    try {
+      S.mediaIsos[el.dataset.device] = (await api("POST", "/api/media/isos", { device: el.dataset.device })).isos;
+    } catch (e) { toast(e.message, true); }
+    return renderPage(true);
+  }
+  if (act === "media-close") { delete S.mediaIsos[el.dataset.device]; return renderPage(true); }
+  if (act === "media-import") {
+    el.disabled = true;
+    return run(api("POST", "/api/media/import", { device: el.dataset.device, file: el.dataset.file }), "Import gestartet").then(loadPage).catch(() => { el.disabled = false; });
+  }
+  if (act === "media-eject") {
+    return run(api("POST", "/api/media/eject", { device: el.dataset.device }), "Der Stick kann jetzt entfernt werden").then(loadPage).catch(() => {});
   }
   if (act === "upload") {
     const input = document.createElement("input");

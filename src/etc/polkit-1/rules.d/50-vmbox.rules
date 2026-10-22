@@ -1,5 +1,6 @@
 // The VMBox daemon runs as "vmbox" and may manage the network, power off or
-// reboot the host and start the installer of the live system - nothing else.
+// reboot the host, open USB sticks and start the installer of the live
+// system - nothing else.
 polkit.addRule(function (action, subject) {
     if (subject.user !== "vmbox") {
         return polkit.Result.NOT_HANDLED;
@@ -11,6 +12,18 @@ polkit.addRule(function (action, subject) {
         action.id === "org.freedesktop.login1.power-off-multiple-sessions" ||
         action.id === "org.freedesktop.login1.reboot" ||
         action.id === "org.freedesktop.login1.reboot-multiple-sessions") {
+        return polkit.Result.YES;
+    }
+    // USB sticks for the ISO import: mount (vmboxd always mounts read-only),
+    // unmount and power off removable drives. Internal disks
+    // ("filesystem-mount-system") stay off limits.
+    if (action.id === "org.freedesktop.udisks2.filesystem-mount" ||
+        action.id === "org.freedesktop.udisks2.filesystem-mount-other-seat" ||
+        action.id === "org.freedesktop.udisks2.filesystem-unmount-others" ||
+        action.id === "org.freedesktop.udisks2.eject-media" ||
+        action.id === "org.freedesktop.udisks2.eject-media-other-seat" ||
+        action.id === "org.freedesktop.udisks2.power-off-drive" ||
+        action.id === "org.freedesktop.udisks2.power-off-drive-other-seat") {
         return polkit.Result.YES;
     }
     if (action.id === "org.freedesktop.systemd1.manage-units" &&

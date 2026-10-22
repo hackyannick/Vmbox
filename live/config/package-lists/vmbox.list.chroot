@@ -36,6 +36,11 @@ wpasupplicant
 iw
 nftables
 
+# --- USB sticks (read-only ISO import) -----------------------------------
+udisks2
+exfatprogs
+ntfs-3g
+
 # --- Storage security ----------------------------------------------------
 cryptsetup
 cryptsetup-bin
