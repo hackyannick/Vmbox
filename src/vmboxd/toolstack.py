@@ -134,6 +134,8 @@ class Toolstack:
             "memory": int(info.get("memory", 0) or 0),
             "cpus": int(info.get("cpus", 1) or 1),
             "firmware": info.get("firmware", "BIOS").lower(),
+            "accelerate3d": info.get("accelerate3d", "off") == "on",
+            "vram": int(info.get("vram", 0) or 0),
             "network": network,
             "disk": "" if disk in ("none", "emptydrive") else disk,
             "iso": "" if dvd in ("none", "emptydrive") else dvd,
@@ -238,13 +240,22 @@ class Toolstack:
             return ["--nic1", "hostonly", "--host-only-adapter1", arg]
         raise ToolstackError("Ungültige Netzwerkzuweisung: %s" % network)
 
-    def _policy_args(self, policy):
+    @staticmethod
+    def _usb_kind(template_id):
+        return TEMPLATES.get(template_id, {}).get("usb", "xhci")
+
+    def _policy_args(self, policy, usb_kind="xhci"):
         clip = CLIPBOARD_MODES.get(policy.get("clipboard", "off"))
         if clip is None:
             raise ToolstackError("Ungültiger Zwischenablage-Modus")
+        usb = policy.get("usb", True)
+        # USB 3.0 (xHCI) for current guests, USB 2.0 (EHCI + OHCI) for e.g. Windows 7.
+        xhci = usb and usb_kind == "xhci"
+        ehci = usb and usb_kind == "ehci"
         return [
-            "--usb-xhci", "on" if policy.get("usb", True) else "off",
-            "--usb-ohci", "off", "--usb-ehci", "off",
+            "--usb-xhci", "on" if xhci else "off",
+            "--usb-ehci", "on" if ehci else "off",
+            "--usb-ohci", "on" if ehci else "off",
             "--audio-enabled", "on" if policy.get("audio", True) else "off",
             "--clipboard-mode", clip,
             "--drag-and-drop", "disabled",
@@ -278,7 +289,7 @@ class Toolstack:
             policy.update(spec.get("policy") or {})
             iso = self._resolve_iso(spec.get("iso"))
             network_args = self._network_args(spec.get("network") or "nat")
-            policy_args = self._policy_args(policy)
+            policy_args = self._policy_args(policy, template.get("usb", "xhci"))
 
             uuid = self.vbox.create_vm(name, template["ostype"])
             self.invalidate()
@@ -288,6 +299,8 @@ class Toolstack:
                     "--memory", memory, "--cpus", cpus,
                     "--firmware", template["firmware"],
                     "--graphicscontroller", template["graphics"], "--vram", template["vram"],
+                    "--accelerate-3d", "on" if template.get("accelerate3d") else "off",
+                    "--nictype1", template.get("nic", "82540EM"),
                     "--ioapic", "on", "--rtc-use-utc", "on" if template["family"] != "windows" else "off",
                     "--mouse", "usbtablet",
                     "--description", str(spec.get("description", ""))[:500],
@@ -357,6 +370,11 @@ class Toolstack:
                 if not 1 <= int(changes["cpus"]) <= 64:
                     raise ToolstackError("Ungültige Anzahl an CPUs")
                 modify += ["--cpus", int(changes["cpus"])]
+            if "accelerate3d" in changes and bool(changes["accelerate3d"]) != vm["accelerate3d"]:
+                needs_stop("Die 3D-Beschleunigung")
+                modify += ["--accelerate-3d", "on" if changes["accelerate3d"] else "off"]
+                if changes["accelerate3d"] and vm["vram"] < 128:
+                    modify += ["--vram", 128]
             if "color" in changes:
                 if not HEX_COLOR_RE.match(str(changes["color"])):
                     raise ToolstackError("Ungültige Farbe")
@@ -383,7 +401,7 @@ class Toolstack:
                 hw_changed = any(policy[k] != vm["policy"][k] for k in ("usb", "audio", "cd"))
                 if hw_changed:
                     needs_stop("Diese Richtlinie")
-                    modify += self._policy_args(policy)
+                    modify += self._policy_args(policy, self._usb_kind(vm["template"]))
                 elif policy["clipboard"] != vm["policy"]["clipboard"]:
                     if policy["clipboard"] not in CLIPBOARD_MODES:
                         raise ToolstackError("Ungültiger Zwischenablage-Modus")
@@ -456,7 +474,7 @@ class Toolstack:
     def _enforce(self, vm):
         """Re-apply hardening and policy before every start, in case somebody
         changed the machine behind our back with VBoxManage."""
-        args = self._hardening_args() + self._policy_args(vm["policy"])
+        args = self._hardening_args() + self._policy_args(vm["policy"], self._usb_kind(vm["template"]))
         if vm["network"] == "nat":
             args += ["--nat-localhostreachable1", "off"]
         self.vbox.modify(vm["uuid"], *args)

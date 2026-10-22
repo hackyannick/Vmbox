@@ -53,6 +53,12 @@ xserver-xorg-legacy
 xserver-xorg-input-libinput
 xserver-xorg-video-all
 libgl1-mesa-dri
+# 3D acceleration of the VMs (OpenGL + Vulkan for VirtualBox/DXVK)
+libgl1
+libegl1
+libglx-mesa0
+libvulkan1
+mesa-vulkan-drivers
 xinit
 xauth
 x11-xserver-utils

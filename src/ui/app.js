@@ -311,7 +311,7 @@ function vmCard(vm, focus) {
     (vm.slot ? '<span class="slot" title="Strg+Alt+' + vm.slot + '">Slot ' + vm.slot + "</span>" : "") + "</div>" +
     '<div class="body"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="status ' + st + '">' + STATE_LABEL[st] + "</span>" + badges.join("") + "</div>" +
     '<div class="meta"><span>' + icon("memory") + fmtMB(vm.memory) + "</span><span>" + icon("cpu") + vm.cpus + " CPU</span><span>" +
-    icon("network") + esc(networkLabel(vm.network)) + "</span>" + (vm.usb_attached.length ? "<span>" + icon("usb") + vm.usb_attached.length + "</span>" : "") + "</div>" +
+    icon("network") + esc(networkLabel(vm.network)) + "</span>" + (vm.accelerate3d ? "<span>" + icon("monitor") + "3D</span>" : "") + (vm.usb_attached.length ? "<span>" + icon("usb") + vm.usb_attached.length + "</span>" : "") + "</div>" +
     '<div class="actions">' + actions + '<span class="grow"></span><button class="btn small icon-only ghost" title="Einstellungen" data-act="details">' + icon("more") + "</button></div></div></div>";
 }
 
@@ -439,6 +439,8 @@ async function openCreate() {
       '<div class="field"><label>Netzwerk</label><select class="input" name="network">' + S.networks.map((n) =>
         '<option value="' + esc(n.id) + '" ' + (n.id === draft.network ? "selected" : "") + ">" + esc(n.label) + "</option>").join("") + "</select></div></div>" +
       (t.tpm ? '<div class="notice">Diese Vorlage erhält UEFI, Secure Boot und ein virtuelles TPM 2.0.</div>' : "") +
+      (t.id === "windows7" ? '<div class="notice">Windows 7 erhält BIOS-Firmware, USB 2.0 und eine Intel-PRO/1000-Netzwerkkarte, für die Windows 7 eigene Treiber mitbringt. Für 3D und Aero nach der Installation die VirtualBox-Gasterweiterungen installieren.</div>' :
+       t.accelerate3d ? '<div class="notice">3D-Beschleunigung ist aktiv. Sie wirkt, sobald im Gast die VirtualBox-Gasterweiterungen installiert sind.</div>' : "") +
       (t.type === "service" ? '<div class="notice">Service-VMs laufen ohne Anzeige im Hintergrund (z. B. als Netzwerk- oder Firewall-VM) und starten automatisch.</div>' : "") +
       '</div><div class="modal-foot"><button type="button" class="btn ghost" data-close>Abbrechen</button>' +
       '<button type="submit" class="btn primary" id="create-submit">' + icon("plus") + "Erstellen</button></div></form>", "modal");
@@ -534,7 +536,8 @@ async function renderDrawer() {
       S.isos.map((i) => { const sel = d.iso && d.iso.endsWith("/" + i.name); return '<option value="' + esc(i.name) + '" ' + (sel ? "selected" : "") + ">" + esc(i.name) + "</option>"; }).join("") +
       '</select><span class="hint">Kann auch im laufenden Betrieb gewechselt werden.</span></div>' +
       '<dl class="kv" style="margin:18px 0"><dt>Festplatte</dt><dd>' + esc(vm.disk || "–") + "</dd><dt>Firmware</dt><dd>" + esc(vm.firmware.toUpperCase()) +
-      "</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
+      "</dd><dt>Grafikspeicher</dt><dd>" + vm.vram + " MB</dd><dt>Gastsystem</dt><dd>" + esc(vm.ostype) + "</dd><dt>UUID</dt><dd>" + esc(vm.uuid) + "</dd></dl>" +
+      switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off)) +
       switchRow("Wegwerf-Modus", "Alle Änderungen an der Festplatte werden beim Ausschalten verworfen (unveränderliches Abbild).", toggle("disposable", d.disposable, !off));
   } else if (tab === "policy") {
     body += '<div class="field"><label>Netzwerk</label><select class="input" data-field="network">' + S.networks.map((n) =>
@@ -614,7 +617,7 @@ $("#overlay").addEventListener("submit", (ev) => {
 async function saveDrawer(vm) {
   const d = S.draft;
   const changes = {};
-  for (const key of ["name", "description", "color", "start_on_boot", "hidden", "network", "disposable", "type"]) {
+  for (const key of ["name", "description", "color", "start_on_boot", "hidden", "network", "disposable", "type", "accelerate3d"]) {
     if (d[key] !== vm[key]) changes[key] = d[key];
   }
   if (+d.slot !== vm.slot) changes.slot = +d.slot;

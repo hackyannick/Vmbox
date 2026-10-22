@@ -107,9 +107,17 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
 | `Strg+Alt+←` / `→` | durch Dashboard und laufende VMs blättern |
 | `Strg+Alt+L` | Bildschirm sperren |
 
-* **Neue VM:** Vorlage wählen (Windows 11/10, Ubuntu, Debian, Fedora, Linux,
+* **Neue VM:** Vorlage wählen (Windows 11/10/7, Ubuntu, Debian, Fedora, Linux,
   Service-VM), Name, Farbe, Ressourcen, ISO und Netzwerk festlegen. Windows 11
-  bekommt automatisch UEFI, Secure Boot und ein virtuelles TPM 2.0.
+  bekommt automatisch UEFI, Secure Boot und ein virtuelles TPM 2.0; Windows 7
+  bekommt BIOS, USB 2.0 und eine Intel-PRO/1000-Netzwerkkarte, für die es
+  eigene Treiber mitbringt.
+* **3D-Beschleunigung** ist bei allen Arbeits-VMs eingeschaltet (VBoxSVGA bzw.
+  VMSVGA, 256 MB Grafikspeicher bei Windows) und lässt sich unter
+  *Hardware* abschalten. Sie wirkt erst, wenn im Gast die VirtualBox-
+  Gasterweiterungen installiert sind (bei Windows 7 nötig für Aero). Auf dem
+  Host nutzt VirtualBox dafür Mesa (OpenGL/Vulkan); proprietäre
+  NVIDIA-Treiber sind nicht im Image.
 * **ISO-Abbilder** werden im Dashboard per Drag & Drop hochgeladen.
 * **VM-Einstellungen** (⋯ an der Karte): Allgemein, Hardware, Netzwerk &
   Richtlinien, Snapshots, USB.

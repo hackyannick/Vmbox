@@ -45,6 +45,27 @@ class ToolstackTest(unittest.TestCase):
         self.assertEqual(extradata["GUI/MenuBar/Enabled"], "false")
         self.assertTrue(vm["disk"].endswith("Büro.vdi"))
 
+    def test_windows7_template_gets_usb2_e1000_and_3d(self):
+        vm = self.create("Win7", template="windows7")
+        info = self.vbox.vm_info(vm["uuid"])
+        self.assertEqual(vm["firmware"], "bios")
+        self.assertTrue(vm["accelerate3d"])
+        self.assertEqual(info["vram"], "256")
+        self.assertEqual(info["nictype1"], "82540EM")
+        self.assertEqual((info["xhci"], info["ehci"], info["usb"]), ("off", "on", "on"))
+        # USB 2.0 is kept when the policy is re-applied before a start
+        self.ts.action(vm["uuid"], "start")
+        self.assertEqual(self.vbox.vm_info(vm["uuid"])["ehci"], "on")
+
+    def test_3d_can_be_toggled_while_stopped(self):
+        vm = self.create(template="linux")
+        self.assertTrue(vm["accelerate3d"])
+        vm = self.ts.update_vm(vm["uuid"], {"accelerate3d": False})
+        self.assertFalse(vm["accelerate3d"])
+        self.ts.action(vm["uuid"], "start")
+        with self.assertRaises(ToolstackError):
+            self.ts.update_vm(vm["uuid"], {"accelerate3d": True})
+
     def test_slots_are_allocated_and_unique(self):
         a = self.create("A")
         b = self.create("B")

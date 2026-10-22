@@ -61,6 +61,8 @@ class FakeVBoxManage:
             uid = self._createvm(name, ostype)
             vm = self.vms[uid]
             vm["info"].update({"memory": str(mem), "cpus": str(cpus), "VMState": state,
+                               "accelerate3d": "on" if meta.get("Type") != "service" else "off",
+                               "vram": "256" if ostype.startswith("Windows") else "128",
                                "SATA-0-0": "%s/%s/%s.vdi" % (self.base, name, name), "SATA-1-0": "emptydrive"})
             if name == "Online-Banking":
                 vm["info"]["nic1"] = "intnet"
@@ -173,6 +175,8 @@ class FakeVBoxManage:
         "--usb-xhci": "xhci", "--audio-enabled": "audio_enabled", "--vrde": "vrde",
         "--nat-localhostreachable1": "natlocalhostreachable1", "--tpm-type": "tpm_type",
         "--graphicscontroller": "graphicscontroller", "--vram": "vram", "--drag-and-drop": "draganddrop",
+        "--accelerate-3d": "accelerate3d", "--nictype1": "nictype1",
+        "--usb-ehci": "ehci", "--usb-ohci": "usb",
     }
 
     def cmd_modifyvm(self, rest):
