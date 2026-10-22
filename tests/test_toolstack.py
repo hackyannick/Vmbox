@@ -154,6 +154,24 @@ class ToolstackTest(unittest.TestCase):
         self.ts.apply_resolution_hints()
         self.assertEqual(info["VideoModeHint"], "2560x1403x32")
 
+    def test_resolution_button_and_diagnostics(self):
+        vm = self.create("Win7", template="windows7")
+        with self.assertRaises(ToolstackError):
+            self.ts.request_resolution(vm["uuid"])            # not running
+        self.ts.action(vm["uuid"], "start")
+        info = self.fake.vms[vm["uuid"]]["info"]
+        info["VideoMode"] = '1280,1024,32"@0,0 1'
+        with self.assertRaises(ToolstackError) as ctx:
+            self.ts.request_resolution(vm["uuid"])            # no Guest Additions
+        self.assertIn("Gasterweiterungen", str(ctx.exception))
+        info["GuestAdditionsVersion"] = "7.2.4 r170995"
+        info["GuestAdditionsRunLevel"] = "3"
+        diag = self.ts.request_resolution(vm["uuid"])
+        self.assertEqual(diag["guest"], [1280, 1024])
+        self.assertEqual(diag["window"], [1920, 1043])         # actual window wins over screen maths
+        self.assertEqual(info["VideoModeHint"], "1920x1043x32")
+        self.assertEqual(self.ts.display_info(vm["uuid"])["guest"], [1920, 1043])
+
     def test_3d_can_be_toggled_while_stopped(self):
         vm = self.create(template="linux")
         self.assertTrue(vm["accelerate3d"])

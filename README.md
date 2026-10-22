@@ -135,6 +135,11 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   Kaltstart der VM). Für automatisches Anpassen weiterhin die
   Gasterweiterungen installieren; Windows 7 braucht dafür vorher die Updates
   KB4474419 und KB4490628 (SHA-2-Treibersignaturen).
+* **Auflösung anpassen:** Laufende VMs mit Gasterweiterungen bekommen die
+  Fenstergröße automatisch; der Knopf mit den vier Pfeilen an der VM-Karte
+  bzw. *Hardware → Auflösung an Fenster anpassen* fordert sie sofort an
+  (`vmbox-ctl resolution <vm>`). *Hardware → Anzeige* zeigt Gast-Auflösung,
+  tatsächliche Fenstergröße, Zielgröße und Status der Gasterweiterungen.
 * **Windows XP und 2000** bekommen zeitgemäße Hardware, für die sie Treiber
   mitbringen: IDE-Controller, PCnet-FAST-III-Netzwerkkarte, AC'97-Ton,
   PS/2-Maus und VBoxVGA (ohne 3D). Weil es keine Sicherheitsupdates mehr gibt,

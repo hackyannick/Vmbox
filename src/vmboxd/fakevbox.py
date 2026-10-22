@@ -62,6 +62,9 @@ class FakeVBoxManage:
             vm = self.vms[uid]
             vm["info"].update({"memory": str(mem), "cpus": str(cpus), "VMState": state,
                                "accelerate3d": "on" if meta.get("Type") != "service" else "off",
+                               "VideoMode": '1280,1024,32"@0,0 1',
+                               "GuestAdditionsVersion": "7.2.4 r170995" if state == "running" else "",
+                               "GuestAdditionsRunLevel": "3" if state == "running" else "0",
                                "vram": "256" if ostype.startswith("Windows") else "128",
                                "SATA-0-0": "%s/%s/%s.vdi" % (self.base, name, name), "SATA-1-0": "emptydrive"})
             if name == "Online-Banking":
@@ -264,6 +267,7 @@ class FakeVBoxManage:
             vm["info"]["nic1"] = opts[0]
         elif action == "setvideomodehint":
             vm["info"]["VideoModeHint"] = "%sx%sx%s" % tuple(opts[:3])
+            vm["info"]["VideoMode"] = '%s,%s,%s"@0,0 1' % tuple(opts[:3])
         elif action in ("reset", "setlinkstate1"):
             pass
         else:

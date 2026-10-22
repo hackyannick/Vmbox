@@ -394,6 +394,17 @@ def api_vm_action(h, ref, action):
     h._json(200, {"ok": True})
 
 
+@route("GET", r"/api/vms/([0-9a-fA-F-]{36})/display")
+def api_vm_display(h, uuid):
+    h._json(200, h.app.toolstack.display_info(_uuid(uuid)))
+
+
+@route("POST", r"/api/vms/([^/]+)/resolution")
+def api_vm_resolution(h, ref):
+    vm = h.app.toolstack.find_vm(urllib.parse.unquote(ref))
+    h._json(200, h.app.toolstack.request_resolution(vm["uuid"]))
+
+
 @route("POST", r"/api/vms/([^/]+)/guest-additions")
 def api_guest_additions(h, ref):
     vm = h.app.toolstack.find_vm(urllib.parse.unquote(ref))

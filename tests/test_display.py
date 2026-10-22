@@ -38,5 +38,14 @@ class ScreenSizeTest(unittest.TestCase):
         self.assertIsNone(self.display({}).screen_size())
 
 
+class WindowGeometryTest(unittest.TestCase):
+    def test_geometry_of_the_vm_window(self):
+        d = X11Display(":0")
+        d.window_for_vm = lambda uuid: 0x03a00007
+        d._run = lambda *argv: ("0x01800003  0 0    0    1920 37   host VMBox Leiste\n"
+                                "0x03a00007  0 0    37   1280 1024 host Windows 7 [Läuft] - Oracle VirtualBox\n")
+        self.assertEqual(d.window_geometry("uuid"), (1280, 1024))
+
+
 if __name__ == "__main__":
     unittest.main()

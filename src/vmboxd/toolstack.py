@@ -594,6 +594,52 @@ class Toolstack:
             return None
         return (size[0], size[1] - BAR_HEIGHT)
 
+    @staticmethod
+    def _parse_video_mode(value):
+        """'1280,1024,32"@0,0 1' (showvminfo) -> (1280, 1024)."""
+        m = re.match(r'^"?(\d+),(\d+)', value or "")
+        return (int(m.group(1)), int(m.group(2))) if m else None
+
+    def display_info(self, uuid):
+        """Diagnostics for the dashboard: guest mode vs. window vs. target."""
+        vm = self.get_vm(uuid)
+        info = self.vbox.vm_info(uuid)
+        window = None
+        if vm["running"]:
+            try:
+                window = self.display.window_geometry(uuid)
+            except DisplayError:
+                window = None
+        guest = self._parse_video_mode(info.get("VideoMode"))
+        target = window or self.window_size()
+        return {
+            "guest": list(guest) if guest else None,
+            "window": list(window) if window else None,
+            "target": list(target) if target else None,
+            "screen": list(self.display.screen_size() or ()) or None,
+            "ga_version": info.get("GuestAdditionsVersion", ""),
+            "ga_runlevel": vm["ga_runlevel"],
+            "graphics": info.get("graphicscontroller", ""),
+            "vram": vm["vram"],
+        }
+
+    def request_resolution(self, uuid):
+        """Ask the guest (via the Guest Additions) to use the window size now."""
+        vm = self.get_vm(uuid)
+        if vm["state"] != "running":
+            raise ToolstackError("Die VM läuft nicht", 409)
+        if vm["ga_runlevel"] < 1:
+            raise ToolstackError("In dieser VM laufen keine Gasterweiterungen – ohne sie kann die "
+                                 "Auflösung nur im Gast selbst gewählt werden", 409)
+        diag = self.display_info(uuid)
+        target = diag["target"]
+        if not target:
+            raise ToolstackError("Die Bildschirmgröße konnte nicht ermittelt werden", 409)
+        self.vbox.control(uuid, "setvideomodehint", target[0], target[1], 32)
+        self._mode_hinted[uuid] = tuple(target)
+        log.info("requested %dx%d for %s", target[0], target[1], vm["name"])
+        return diag
+
     def apply_resolution_hints(self):
         """Tell guests with Guest Additions to use exactly the window size.
 

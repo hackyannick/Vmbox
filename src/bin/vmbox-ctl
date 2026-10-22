@@ -56,6 +56,12 @@ def cmd_guest_additions(args):
     print("Gasterweiterungen eingelegt")
 
 
+def cmd_resolution(args):
+    diag = call("POST", vm_path(args.vm) + "/resolution")
+    print("Angefordert: %sx%s (Gast bisher: %s)" % (diag["target"][0], diag["target"][1],
+                                                  "x".join(map(str, diag["guest"] or [])) or "?"))
+
+
 def cmd_switch(args):
     target = args.target
     if target in ("ui", "next", "prev"):
@@ -122,6 +128,9 @@ def main():
     p = sub.add_parser("guest-additions", help="Gasterweiterungen ins DVD-Laufwerk einlegen")
     p.add_argument("vm", help="Name, Slot oder UUID")
     p.set_defaults(func=cmd_guest_additions)
+    p = sub.add_parser("resolution", help="Gast-Auflösung an das Fenster anpassen")
+    p.add_argument("vm", help="Name, Slot oder UUID")
+    p.set_defaults(func=cmd_resolution)
     p = sub.add_parser("switch", help="Anzeige umschalten: ui | next | prev | slot N | <vm>")
     p.add_argument("target")
     p.add_argument("slot", nargs="?", type=int)

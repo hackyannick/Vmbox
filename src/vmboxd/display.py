@@ -79,6 +79,17 @@ class X11Display:
         candidates.sort(key=lambda c: "[" not in c[1])
         return candidates[0][0] if candidates else None
 
+    def window_geometry(self, uuid):
+        """(width, height) of the VM's window as the window manager placed it."""
+        wid = self.window_for_vm(uuid)
+        if wid is None:
+            return None
+        for line in self._run("wmctrl", "-lG").splitlines():
+            parts = line.split(None, 6)
+            if len(parts) >= 6 and int(parts[0], 16) == wid:
+                return (int(parts[4]), int(parts[5]))
+        return None
+
     def ui_window(self):
         for wid, _, title in self.windows():
             if title == UI_WINDOW_TITLE:
@@ -203,3 +214,6 @@ class VirtualDisplay:
 
     def screen_size(self):
         return (1920, 1080)
+
+    def window_geometry(self, uuid):
+        return (1920, 1043) if uuid in self._running() else None

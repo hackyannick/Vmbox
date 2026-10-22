@@ -304,6 +304,7 @@ function vmCard(vm, focus) {
     actions = (vm.type === "user" ? '<button class="btn primary small" data-act="switch">' + icon("monitor") + "Anzeigen</button>" : "") +
       '<button class="btn small icon-only" title="Pausieren" data-act="pause">' + icon("pause") + "</button>" +
       (vm.type === "user" && vm.policy.cd ? '<button class="btn small icon-only" title="Gasterweiterungen einlegen" data-act="guest-additions">' + icon("disc") + "</button>" : "") +
+      (vm.type === "user" ? '<button class="btn small icon-only" title="Auflösung an Fenster anpassen" data-act="resolution">' + icon("resize") + "</button>" : "") +
       '<button class="btn small icon-only" title="Ausschalten …" data-act="power">' + icon("power") + "</button>";
   } else if (st === "paused") {
     actions = '<button class="btn primary small" data-act="resume">' + icon("play") + "Fortsetzen</button>" +
@@ -362,6 +363,7 @@ $("#main").addEventListener("click", async (ev) => {
       return run(api("POST", "/api/vms/" + uuid + "/" + act)).catch(() => {}).finally(() => { el.disabled = false; });
     case "power": return powerDialog(vm);
     case "guest-additions": return insertGuestAdditions(vm);
+    case "resolution": return requestResolution(vm);
     default: return pageAction(act, el);
   }
 });
@@ -373,6 +375,28 @@ function guestAdditionsHint(vm) {
       (vm.template === "windows7" ? " Windows 7 braucht vorher die Updates KB4474419 und KB4490628 (SHA-2-Treibersignaturen), sonst bleibt es beim Standard-VGA-Treiber mit max. 1280×1024." : "");
   }
   return "Im Gast als root ausführen: sh /media/cdrom/VBoxLinuxAdditions.run (Pfad je nach Distribution).";
+}
+
+const fmtSize = (s) => (s ? s[0] + " × " + s[1] : "–");
+
+async function requestResolution(vm) {
+  try {
+    const d = await api("POST", "/api/vms/" + vm.uuid + "/resolution");
+    toast("Auflösung " + fmtSize(d.target) + " angefordert (Gast bisher " + fmtSize(d.guest) + ")");
+    setTimeout(() => loadDisplayInfo(vm), 2500);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadDisplayInfo(vm) {
+  const el = $("#display-info");
+  if (!el) return;
+  let d;
+  try { d = await api("GET", "/api/vms/" + vm.uuid + "/display"); } catch (e) { el.innerHTML = '<span class="no">' + esc(e.message) + "</span>"; return; }
+  const ga = d.ga_version ? esc(d.ga_version) + " (Stufe " + d.ga_runlevel + "/3)" : '<span class="no">nicht aktiv</span>';
+  const mismatch = d.guest && d.target && (d.guest[0] !== d.target[0] || d.guest[1] !== d.target[1]);
+  el.innerHTML = '<dl class="kv"><dt>Gast-Auflösung</dt><dd>' + (mismatch ? '<span class="no">' + fmtSize(d.guest) + "</span>" : fmtSize(d.guest)) +
+    "</dd><dt>VM-Fenster</dt><dd>" + fmtSize(d.window) + "</dd><dt>Ziel</dt><dd>" + fmtSize(d.target) + "</dd><dt>Bildschirm</dt><dd>" + fmtSize(d.screen) +
+    "</dd><dt>Gasterweiterungen</dt><dd>" + ga + "</dd><dt>Grafik</dt><dd>" + (d.graphics ? esc(d.graphics) + ", " : "") + d.vram + " MB</dd></dl>";
 }
 
 async function insertGuestAdditions(vm) {
@@ -571,6 +595,10 @@ async function renderDrawer() {
       switchRow("Beim Systemstart starten", "Wird nach der Anmeldung automatisch gestartet.", toggle("start_on_boot", d.start_on_boot)) +
       switchRow("Im Dashboard ausblenden", "Nur sichtbar mit „Ausgeblendete zeigen“.", toggle("hidden", d.hidden));
   } else if (tab === "hardware") {
+    if (vm.running) {
+      body += '<div class="field"><span class="label">Anzeige</span><div id="display-info" style="margin:6px 0 10px">Lade …</div>' +
+        '<button type="button" class="btn" id="vm-resolution">' + icon("resize") + "Auflösung an Fenster anpassen</button></div>";
+    }
     body += '<div class="row"><div class="field"><label>Arbeitsspeicher (MB)</label><input class="input" type="number" min="256" step="256" data-field="memory" value="' + d.memory + '" ' + (off ? "" : "disabled") + "></div>" +
       '<div class="field"><label>CPUs</label><input class="input" type="number" min="1" max="64" data-field="cpus" value="' + d.cpus + '" ' + (off ? "" : "disabled") + "></div></div>" +
       '<div class="field"><label>Installationsmedium (CD/DVD)</label><select class="input" data-field="iso" ' + (d.policy.cd ? "" : "disabled") + '><option value="">– leer –</option>' +
@@ -618,6 +646,7 @@ async function renderDrawer() {
   $(".drawer").style.setProperty("--vm-color", vm.color);
   if (tab === "snapshots") loadSnapshots(vm);
   if (tab === "usb") loadDrawerUSB(vm);
+  if (tab === "hardware" && vm.running) loadDisplayInfo(vm);
 }
 
 function setDraft(field, value) {
@@ -648,6 +677,7 @@ $("#overlay").addEventListener("click", async (ev) => {
       await run(api("POST", "/api/vms/" + vm.uuid + "/discard"), "Zustand verworfen").catch(() => {});
     }
   }
+  else if (ev.target.closest("#vm-resolution")) requestResolution(vm);
   else if (ev.target.closest("#vm-ga")) {
     if (await insertGuestAdditions(vm)) {
       S.draft.iso = "@guest-additions";
