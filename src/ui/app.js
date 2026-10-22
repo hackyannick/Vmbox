@@ -415,8 +415,8 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && $("#ov
 function choose(title, text, options) {
   return new Promise((resolve) => {
     openOverlay('<div class="modal-head"><h2>' + esc(title) + "</h2><p>" + esc(text) + '</p></div><div class="modal-foot">' +
-      '<button class="btn ghost" data-choice="">Abbrechen</button>' +
-      options.map(([id, label, cls]) => '<button class="btn ' + cls + '" data-choice="' + id + '">' + esc(label) + "</button>").join("") + "</div>", "modal small");
+      '<button class="btn ghost cancel" data-choice="">Abbrechen</button>' +
+      options.map(([id, label, cls]) => '<button class="btn ' + cls + '" data-choice="' + id + '">' + esc(label) + "</button>").join("") + "</div>", options.length > 1 ? "modal medium" : "modal small");
     $("#overlay").addEventListener("click", function handler(ev) {
       const btn = ev.target.closest("[data-choice]");
       if (!btn && !ev.target.hasAttribute("data-close")) return;

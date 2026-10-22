@@ -330,11 +330,17 @@ main::-webkit-scrollbar-thumb, .drawer-body::-webkit-scrollbar-thumb { backgroun
   background: linear-gradient(160deg, rgba(16, 60, 138, 0.97), rgba(5, 22, 58, 0.98)); border: 1px solid var(--glass-border);
   border-radius: 20px; box-shadow: 0 30px 80px rgba(0,0,0,.5); animation: pop .18s ease-out; }
 .modal.small { width: min(440px, 94vw); }
+.modal.medium { width: min(720px, 94vw); }
 .modal-head { padding: 22px 26px 6px; }
 .modal-head h2 { margin: 0; font-size: 20px; }
 .modal-head p { margin: 6px 0 0; color: var(--text-muted); font-size: 14px; }
 .modal-body { padding: 16px 26px; overflow-y: auto; }
-.modal-foot { padding: 14px 26px 22px; display: flex; justify-content: flex-end; gap: 10px; }
+.modal-foot { padding: 14px 26px 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.modal-foot .cancel { margin-right: auto; }
+@media (max-width: 600px) {
+  .modal-foot .btn { flex: 1 1 100%; }
+  .modal-foot .cancel { order: 1; margin-right: 0; }
+}
 .templates { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
 .templates button { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 8px; border-radius: 14px;
   border: 1px solid var(--glass-border); background: rgba(3,16,45,.35); cursor: pointer; font-size: 12.5px; font-weight: 600;
