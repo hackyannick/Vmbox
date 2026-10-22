@@ -47,15 +47,22 @@ class InstallerTerminalTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _read(self, fd, wait=1.0):
-        out, deadline = b"", time.time() + wait
+    def _wait_for(self, fd, text, timeout=15):
+        """Read terminal output until ``text`` appears (slow CI runners!)."""
+        out, deadline = b"", time.time() + timeout
         while time.time() < deadline:
             if select.select([fd], [], [], 0.1)[0]:
                 try:
                     out += os.read(fd, 65536)
                 except OSError:
                     break
-        return out.decode(errors="replace")
+                if text.encode() in out:
+                    # give whiptail a moment to finish drawing the dialog
+                    time.sleep(0.3)
+                    while select.select([fd], [], [], 0.1)[0]:
+                        out += os.read(fd, 65536)
+                    return out.decode(errors="replace")
+        self.fail("%r did not appear on the terminal; got: %r" % (text, out[-400:]))
 
     def test_dialogs_visible_when_stderr_is_not_a_terminal(self):
         master, slave = pty.openpty()
@@ -63,15 +70,15 @@ class InstallerTerminalTest(unittest.TestCase):
         proc = subprocess.Popen(["bash", INSTALLER], stdin=slave, stdout=slave, stderr=stderr,
                                 env=self.env, start_new_session=True)
         try:
-            self.assertIn("Willkommen", self._read(master))
+            self._wait_for(master, "Willkommen")
             os.write(master, b"\r")                      # "Weiter"
-            screen = self._read(master)
-            self.assertIn("Auf welche Festplatte", screen)
+            screen = self._wait_for(master, "Auf welche Festplatte")
             self.assertIn("/dev/vdtest", screen)
-            os.write(master, b"\x1b")                    # Escape -> cancel
-            self.assertIn("abgebrochen", self._read(master, 1.5))
+            # Tab Tab -> <Cancel>, Enter. (Escape would hit newt's escape-sequence delay.)
+            os.write(master, b"\t\t\r")
+            self._wait_for(master, "abgebrochen")
             os.write(master, b"\r")
-            self.assertEqual(proc.wait(timeout=10), 0)
+            self.assertEqual(proc.wait(timeout=15), 0)
         finally:
             if proc.poll() is None:
                 proc.kill()
