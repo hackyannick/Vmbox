@@ -937,6 +937,10 @@ function renderSystem() {
     html += '<div class="glass panel"><h2>Installation</h2><p>VMBox dauerhaft auf eine Festplatte installieren – mit verschlüsseltem VM-Speicher und optionaler TPM-Entsperrung.</p>' +
       '<button class="btn primary" data-act="install">' + icon("download") + "VMBox installieren</button></div>";
   }
+  html += '<div class="glass panel"><h2>Statusleiste</h2><p>Ohne Leiste bekommen die VMs den ganzen Bildschirm. ' +
+    "<kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> blendet sie jederzeit ein und aus, <kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>Pos1</kbd> führt aus jeder VM zurück zum Dashboard.</p>" +
+    switchRow("Statusleiste anzeigen", S.state.bar_hidden ? "Ausgeblendet – VMs im Vollbild." : "Sichtbar über allen VMs.",
+      '<label class="toggle"><input type="checkbox" id="bar-toggle" ' + (S.state.bar_hidden ? "" : "checked") + '><span class="track"></span></label>') + "</div>";
   html += '<div class="glass panel"><h2>Passwort ändern</h2><p>Schützt Dashboard und Sperrbildschirm.</p><form id="pw-form">' +
     '<div class="field"><input class="input" type="password" name="old" placeholder="Bisheriges Passwort" required></div>' +
     '<div class="row"><div class="field"><input class="input" type="password" name="new" placeholder="Neues Passwort" required minlength="6"></div>' +
@@ -946,6 +950,12 @@ function renderSystem() {
     '<button class="btn" data-act="host-reboot">' + icon("restore") + 'Neu starten</button><button class="btn danger" data-act="host-poweroff">' + icon("power") + "Ausschalten</button></div></div></div></div>";
   return html;
 }
+
+$("#main").addEventListener("change", (ev) => {
+  if (ev.target.id !== "bar-toggle") return;
+  run(api("POST", "/api/bar/" + (ev.target.checked ? "show" : "hide")), ev.target.checked ? "Statusleiste eingeblendet" : "Statusleiste ausgeblendet")
+    .then(() => poll().then(() => renderPage(true))).catch(() => {});
+});
 
 $("#main").addEventListener("submit", async (ev) => {
   if (ev.target.id !== "pw-form") return;

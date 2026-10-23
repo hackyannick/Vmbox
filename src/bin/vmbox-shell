@@ -6,9 +6,13 @@ Shows two kiosk WebKit windows that talk to vmboxd on localhost:
   * the dashboard (maximised below the bar, titled "VMBox Dashboard")
 """
 
+import json
 import os
 import subprocess
 import sys
+import threading
+import time
+import urllib.request
 
 import gi
 
@@ -36,6 +40,32 @@ class Shell:
         self._place_bar()
         self.dashboard.show_all()
         self.bar.show_all()
+        self.bar_visible = True
+        threading.Thread(target=self._watch_bar_setting, daemon=True).start()
+
+    # -- bar on/off (Strg+Alt+F, setting stored by vmboxd) -------------------
+    def _watch_bar_setting(self):
+        while True:
+            try:
+                with urllib.request.urlopen(URL + "/api/state", timeout=2) as resp:
+                    hidden = bool(json.load(resp).get("bar_hidden"))
+                GLib.idle_add(self._apply_bar_visibility, not hidden)
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.5)
+
+    def _apply_bar_visibility(self, visible):
+        if visible == self.bar_visible:
+            return False
+        self.bar_visible = visible
+        if visible:
+            self.bar.show_all()
+            self._place_bar()
+        else:
+            # Unmapping the dock window also releases its strut: maximised VM
+            # windows grow to the full screen.
+            self.bar.hide()
+        return False
 
     # -- windows ----------------------------------------------------------
     def _view(self, url):

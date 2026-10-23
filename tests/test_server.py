@@ -141,6 +141,20 @@ class ServerTest(unittest.TestCase):
         status, _, _ = self.request("POST", "/api/isos?name=x.exe", raw=b"x", headers={"X-VMBox-Upload": "1"})
         self.assertEqual(status, 400)
 
+    def test_06b_bar_can_be_hidden_and_is_remembered(self):
+        self.login()
+        status, res, _ = self.request("POST", "/api/bar/hide", {})
+        self.assertEqual((status, res["bar_hidden"]), (200, True))
+        _, state, _ = self.request("GET", "/api/state", cookie=False)
+        self.assertTrue(state["bar_hidden"])               # public for vmbox-shell
+        self.assertTrue(self.app.toolstack.bar_hidden())
+        with open(self.app.settings_path) as fh:
+            self.assertIn('"bar_hidden": true', fh.read())
+        _, res = unix_request(self.app.cfg.socket_path, "POST", "/api/bar/toggle", {})
+        self.assertFalse(res["bar_hidden"])
+        status, _, _ = self.request("POST", "/api/bar/hide", {}, cookie=False)
+        self.assertEqual(status, 401)                       # browser needs a session
+
     def test_07_unix_socket_is_trusted_but_respects_lock(self):
         status, data = unix_request(self.app.cfg.socket_path, "GET", "/api/vms")
         self.assertEqual(status, 200)

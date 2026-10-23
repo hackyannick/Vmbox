@@ -109,6 +109,7 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
 | `Strg+Alt+1` … `9` | zur VM im jeweiligen Slot |
 | `Strg+Alt+←` / `→` | durch Dashboard und laufende VMs blättern |
 | `Strg+Alt+L` | Bildschirm sperren |
+| `Strg+Alt+F` | Statusleiste ein-/ausblenden (VMs im Vollbild) |
 
 * **Neue VM:** Vorlage wählen (Windows 11/10/7/XP/2000, Ubuntu, Debian, Fedora, Linux,
   Service-VM), Name, Farbe, Ressourcen, ISO und Netzwerk festlegen. Windows 11
@@ -175,6 +176,7 @@ vmbox-ctl guest-additions <vm>          Gasterweiterungen einlegen
 vmbox-ctl switch ui|next|prev|<vm>      Anzeige umschalten
 vmbox-ctl switch slot <n>
 vmbox-ctl lock                          Bildschirm sperren
+vmbox-ctl bar [toggle|show|hide]        Statusleiste ein-/ausblenden
 vmbox-ctl save-all                      alle laufenden VMs speichern
 vmbox-ctl usb list | assign <gerät> <vm> [--force] | release <gerät>
 vmbox-ctl snapshot list|take|restore|delete <vm> [name]

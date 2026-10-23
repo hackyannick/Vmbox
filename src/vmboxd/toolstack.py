@@ -118,6 +118,7 @@ class Toolstack:
         self._frontend_launched = {}
         self._window_missing = {}
         self._mode_hinted = {}
+        self.bar_hidden = lambda: False
         self.is_locked = lambda: False
 
     # ------------------------------------------------------------------ #
@@ -585,14 +586,16 @@ class Toolstack:
         return result[:MAX_CUSTOM_MODES]
 
     def window_size(self):
-        """Size of a VM window: the primary screen below the VMBox bar."""
+        """Size of a VM window: the primary screen below the VMBox bar
+        (or the whole screen while the bar is switched off)."""
         try:
             size = self.display.screen_size()
         except DisplayError:
             return None
-        if not size or size[1] <= BAR_HEIGHT:
+        bar = 0 if self.bar_hidden() else BAR_HEIGHT
+        if not size or size[1] <= bar:
             return None
-        return (size[0], size[1] - BAR_HEIGHT)
+        return (size[0], size[1] - bar)
 
     @staticmethod
     def _parse_video_mode(value):

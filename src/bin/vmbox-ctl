@@ -62,6 +62,11 @@ def cmd_resolution(args):
                                                   "x".join(map(str, diag["guest"] or [])) or "?"))
 
 
+def cmd_bar(args):
+    hidden = call("POST", "/api/bar/" + args.action)["bar_hidden"]
+    print("Statusleiste %s" % ("ausgeblendet" if hidden else "eingeblendet"))
+
+
 def cmd_switch(args):
     target = args.target
     if target in ("ui", "next", "prev"):
@@ -136,6 +141,9 @@ def main():
     p.add_argument("slot", nargs="?", type=int)
     p.set_defaults(func=cmd_switch)
     sub.add_parser("lock", help="Bildschirm sperren").set_defaults(func=cmd_lock)
+    p = sub.add_parser("bar", help="Statusleiste ein-/ausblenden")
+    p.add_argument("action", choices=["toggle", "show", "hide"], nargs="?", default="toggle")
+    p.set_defaults(func=cmd_bar)
     sub.add_parser("save-all", help="Zustand aller laufenden VMs speichern").set_defaults(func=cmd_save_all)
     p = sub.add_parser("usb", help="USB-Geräte")
     usb = p.add_subparsers(dest="usb_cmd", required=True)

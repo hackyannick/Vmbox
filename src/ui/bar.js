@@ -42,6 +42,8 @@ $("#vms").addEventListener("click", (ev) => {
 $("#home").addEventListener("click", () => post("/api/switch/ui"));
 $("#lock").addEventListener("click", () => post("/api/lock"));
 $("#lock").innerHTML = icon("lock");
+$("#hidebar").innerHTML = icon("eyeoff");
+$("#hidebar").addEventListener("click", () => post("/api/bar/hide"));
 
 function clock() {
   $("#clock").textContent = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });

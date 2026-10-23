@@ -172,6 +172,12 @@ class ToolstackTest(unittest.TestCase):
         self.assertEqual(info["VideoModeHint"], "1920x1043x32")
         self.assertEqual(self.ts.display_info(vm["uuid"])["guest"], [1920, 1043])
 
+    def test_hidden_bar_gives_vms_the_whole_screen(self):
+        self.display.screen_size = lambda: (1920, 1080)
+        self.assertEqual(self.ts.window_size(), (1920, 1043))
+        self.ts.bar_hidden = lambda: True
+        self.assertEqual(self.ts.window_size(), (1920, 1080))
+
     def test_3d_can_be_toggled_while_stopped(self):
         vm = self.create(template="linux")
         self.assertTrue(vm["accelerate3d"])

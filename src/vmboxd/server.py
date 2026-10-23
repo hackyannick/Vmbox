@@ -65,8 +65,29 @@ class App:
         self.host = host
         self.media = media
         self.started = time.time()
+        self.settings_path = os.path.join(cfg.state_dir, "settings.json")
+        self.settings = self._load_settings()
+        toolstack.bar_hidden = lambda: bool(self.settings.get("bar_hidden"))
         self._autostarted_user_vms = False
         toolstack.is_locked = lambda: self.auth.locked
+
+    def _load_settings(self):
+        try:
+            with open(self.settings_path) as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def set_setting(self, key, value):
+        self.settings[key] = value
+        tmp = self.settings_path + ".tmp"
+        try:
+            with open(tmp, "w") as fh:
+                json.dump(self.settings, fh)
+            os.replace(tmp, self.settings_path)
+        except OSError as exc:
+            log.warning("could not save settings: %s", exc)
 
     def on_unlock(self):
         """Called after a successful login: start "start on boot" user VMs once."""
@@ -131,6 +152,8 @@ class App:
             "live": self.cfg.live,
             "time": int(time.time()),
             "idle_lock": self.cfg.idle_lock,
+            # public: vmbox-shell reads it to show or hide the top bar
+            "bar_hidden": bool(self.settings.get("bar_hidden")),
         }
         if authenticated:
             data["focus"] = self.toolstack.focus()
@@ -585,6 +608,14 @@ def api_media_import(h):
 def api_media_eject(h):
     _media(h).eject(str(h._body().get("device", "")))
     h._json(200, {"ok": True})
+
+
+@route("POST", r"/api/bar/(show|hide|toggle)")
+def api_bar(h, action):
+    hidden = {"show": False, "hide": True}.get(action, not h.app.settings.get("bar_hidden"))
+    h.app.set_setting("bar_hidden", hidden)
+    h.app.toolstack.invalidate()
+    h._json(200, {"bar_hidden": hidden})
 
 
 @route("GET", r"/api/host")
