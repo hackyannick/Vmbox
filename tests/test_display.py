@@ -47,5 +47,28 @@ class WindowGeometryTest(unittest.TestCase):
         self.assertEqual(d.window_geometry("uuid"), (1280, 1024))
 
 
+class HostGraphicsTest(unittest.TestCase):
+    def test_hardware_and_software_renderers(self):
+        from vmboxd import host as hostmod
+        outputs = {
+            "glxinfo": "name of display: :0\nOpenGL vendor string: AMD\nOpenGL renderer string: AMD Radeon 780M Graphics (radeonsi, gfx1103)\n",
+            "vulkaninfo": "GPU0:\n\tdeviceName         = AMD Radeon 780M Graphics (RADV PHOENIX)\nGPU1:\n\tdeviceName         = llvmpipe (LLVM 19.1.7, 256 bits)\n",
+        }
+        original = hostmod._run
+        hostmod._run = lambda *argv, timeout=30: outputs[argv[0]]
+        try:
+            g = hostmod.Host("/tmp").graphics()
+            self.assertEqual(g["opengl"], "AMD Radeon 780M Graphics (radeonsi, gfx1103)")
+            self.assertIn("AMD Radeon 780M Graphics (RADV PHOENIX)", g["vulkan"])
+            self.assertFalse(g["software"])
+            outputs["glxinfo"] = "OpenGL renderer string: llvmpipe (LLVM 19.1.7, 256 bits)\n"
+            outputs["vulkaninfo"] = "\tdeviceName = llvmpipe (LLVM 19.1.7, 256 bits)\n"
+            h = hostmod.Host("/tmp")
+            h._graphics_cache = (0.0, None)
+            self.assertTrue(h.graphics()["software"])
+        finally:
+            hostmod._run = original
+
+
 if __name__ == "__main__":
     unittest.main()

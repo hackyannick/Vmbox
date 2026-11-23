@@ -64,6 +64,9 @@ libegl1
 libglx-mesa0
 libvulkan1
 mesa-vulkan-drivers
+# diagnostics: which OpenGL/Vulkan renderer the host uses (System page)
+mesa-utils
+vulkan-tools
 xinit
 xauth
 x11-xserver-utils

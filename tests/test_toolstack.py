@@ -14,7 +14,7 @@ class ToolstackTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.iso_dir = os.path.join(self.tmp.name, "isos")
         os.makedirs(self.iso_dir)
-        self.fake = FakeVBoxManage()
+        self.fake = FakeVBoxManage(base=os.path.join(self.tmp.name, "vms"))
         self.vbox = VBoxManage(runner=self.fake)
         self.display = VirtualDisplay(running=self.vbox.running_vms)
         self.ts = Toolstack(self.vbox, self.display, self.iso_dir, cache_ttl=0)
@@ -267,6 +267,7 @@ class ToolstackTest(unittest.TestCase):
 
     def test_window_reattached_only_after_it_stays_missing(self):
         vm = self.create()
+        vm = self.ts.update_vm(vm["uuid"], {"direct_window": False})   # detachable window
         self.ts.action(vm["uuid"], "start")
         launched, clock = self._frontend_setup()
         clock[0] += 25                       # start grace is over
@@ -278,6 +279,7 @@ class ToolstackTest(unittest.TestCase):
 
     def test_no_window_for_a_vm_that_just_stopped(self):
         vm = self.create()
+        vm = self.ts.update_vm(vm["uuid"], {"direct_window": False})   # detachable window
         self.ts.action(vm["uuid"], "start")
         launched, clock = self._frontend_setup()
         clock[0] += 25
@@ -312,6 +314,37 @@ class ToolstackTest(unittest.TestCase):
         with self.assertRaises(ToolstackError) as ctx:
             self.ts.insert_guest_additions(other["uuid"])
         self.assertEqual(ctx.exception.status, 404)
+
+    def test_direct_window_for_3d_vms(self):
+        vm = self.create("Win7", template="windows7")
+        self.assertTrue(vm["direct_window"])
+        self.ts.action(vm["uuid"], "start")
+        self.assertIn(["startvm", vm["uuid"], "--type", "gui"], self.fake.calls)
+        # a direct VM never gets a second, detachable window attached
+        launched = []
+        self.display.launch_frontend = launched.append
+        self.display.has_window = lambda uuid: False
+        self.ts._frontend_launched.clear()
+        self.ts.ensure_frontends(grace=0, confirm=0)
+        self.assertEqual(launched, [])
+        self.ts.action(vm["uuid"], "poweroff")
+        vm = self.ts.update_vm(vm["uuid"], {"direct_window": False})
+        self.ts.action(vm["uuid"], "start")
+        self.assertIn(["startvm", vm["uuid"], "--type", "separate"], self.fake.calls)
+        service = self.create("Netz", template="service")
+        self.assertFalse(service["direct_window"])
+
+    def test_renderer_lines_from_vbox_log(self):
+        vm = self.create("Win7", template="windows7")
+        logs = os.path.join(os.path.dirname(self.vbox.vm_info(vm["uuid"])["CfgFile"]), "Logs")
+        os.makedirs(logs, exist_ok=True)
+        with open(os.path.join(logs, "VBox.log"), "w") as fh:
+            fh.write("00:00:01.000001 VMSVGA3d: Using DXVK backend\n"
+                     "00:00:01.000002 GL_RENDERER: llvmpipe (LLVM 19.1.7, 256 bits)\n"
+                     "00:00:01.000003 Something unrelated\n")
+        diag = self.ts.display_info(vm["uuid"])
+        self.assertEqual(diag["renderer"]["lines"], ["VMSVGA3d: Using DXVK backend", "GL_RENDERER: llvmpipe (LLVM 19.1.7, 256 bits)"])
+        self.assertTrue(diag["renderer"]["software"])
 
     def test_switch_cycle(self):
         a, b = self.create("A"), self.create("B")

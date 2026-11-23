@@ -176,6 +176,7 @@ class Toolstack:
             "accelerate3d": info.get("accelerate3d", "off") == "on",
             "cpu_profile": x("CPUProfile", ""),
             "spec_ctrl": _bool(x("SpecCtrl")),
+            "direct_window": _bool(x("DirectWindow")),
             "vram": int(info.get("vram", 0) or 0),
             "network": network,
             "disk": "" if disk in ("none", "emptydrive") else disk,
@@ -382,6 +383,8 @@ class Toolstack:
                     "Slot": str(slot), "Hidden": _flag(vmtype == "service"),
                     "StartOnBoot": _flag(spec.get("start_on_boot", vmtype == "service")),
                     "Disposable": "0",
+                    # 3D is faster with the window in the VM process (see VBoxManage.start)
+                    "DirectWindow": _flag(vmtype == "user" and template.get("accelerate3d")),
                     "Policy/USB": _flag(policy.get("usb", True)), "Policy/CD": _flag(policy.get("cd", True)),
                     "Policy/Audio": _flag(policy.get("audio", True)),
                     "Policy/Clipboard": policy.get("clipboard", "off"),
@@ -436,6 +439,9 @@ class Toolstack:
                 modify += ["--cpu-profile", profile]
                 # "host" is stored explicitly so the legacy default is not re-applied
                 meta["CPUProfile"] = profile
+            if "direct_window" in changes and bool(changes["direct_window"]) != vm["direct_window"]:
+                needs_stop("Die Fensterart")
+                meta["DirectWindow"] = _flag(changes["direct_window"])
             if "spec_ctrl" in changes and bool(changes["spec_ctrl"]) != vm["spec_ctrl"]:
                 needs_stop("Der Spectre-Schutz")
                 modify += ["--spec-ctrl", "on" if changes["spec_ctrl"] else "off"]
@@ -624,7 +630,34 @@ class Toolstack:
             "ga_runlevel": vm["ga_runlevel"],
             "graphics": info.get("graphicscontroller", ""),
             "vram": vm["vram"],
+            "direct_window": vm["direct_window"],
+            "renderer": self._renderer_log(info.get("CfgFile", "")),
         }
+
+    RENDERER_RE = re.compile(r"GL_RENDERER|GL_VENDOR|OpenGL (renderer|version)|VMSVGA3d|DXVK|Vulkan|llvmpipe|lavapipe|softpipe", re.I)
+    SOFTWARE_RE = re.compile(r"llvmpipe|lavapipe|softpipe|software rasterizer|SwiftShader", re.I)
+
+    def _renderer_log(self, cfg_file, limit=12):
+        """3D renderer lines from the VM's VBox.log - shows whether VirtualBox
+        renders with the real GPU or in software (llvmpipe)."""
+        if not cfg_file:
+            return None
+        path = os.path.join(os.path.dirname(cfg_file), "Logs", "VBox.log")
+        lines = []
+        try:
+            with open(path, errors="replace") as fh:
+                for line in fh:
+                    if self.RENDERER_RE.search(line):
+                        text = line.strip()
+                        # drop VirtualBox's timestamp prefix "00:00:01.234567 "
+                        text = re.sub(r"^\d+:\d+:\d+\.\d+\s+", "", text)
+                        if text not in lines:
+                            lines.append(text[:200])
+                    if len(lines) >= limit:
+                        break
+        except OSError:
+            return None
+        return {"lines": lines, "software": any(self.SOFTWARE_RE.search(l) for l in lines)}
 
     def request_resolution(self, uuid):
         """Ask the guest (via the Guest Additions) to use the window size now."""
@@ -708,7 +741,7 @@ class Toolstack:
                 elif state in ("stopped", "saved"):
                     if state == "stopped":
                         self._enforce(vm)
-                    self.vbox.start(uuid, headless=vm["type"] == "service")
+                    self.vbox.start(uuid, headless=vm["type"] == "service", direct=vm["direct_window"])
                     self._frontend_launched[uuid] = time.monotonic()
                     if vm["type"] == "user":
                         threading.Thread(target=self._focus_when_ready, args=(uuid,), daemon=True).start()
@@ -803,7 +836,8 @@ class Toolstack:
         now = time.monotonic()
         for vm in self.list_vms():
             uuid = vm["uuid"]
-            if vm["type"] != "user" or not vm["running"]:
+            if vm["type"] != "user" or not vm["running"] or vm["direct_window"]:
+                # a "direct" VM's window is its own process: no window means no VM
                 self._window_missing.pop(uuid, None)
                 continue
             if now - self._frontend_launched.get(uuid, 0) < grace:

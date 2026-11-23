@@ -488,7 +488,12 @@ async function loadDisplayInfo(vm) {
   const mismatch = d.guest && d.target && (d.guest[0] !== d.target[0] || d.guest[1] !== d.target[1]);
   el.innerHTML = '<dl class="kv"><dt>Gast-Auflösung</dt><dd>' + (mismatch ? '<span class="no">' + fmtSize(d.guest) + "</span>" : fmtSize(d.guest)) +
     "</dd><dt>VM-Fenster</dt><dd>" + fmtSize(d.window) + "</dd><dt>Ziel</dt><dd>" + fmtSize(d.target) + "</dd><dt>Bildschirm</dt><dd>" + fmtSize(d.screen) +
-    "</dd><dt>Gasterweiterungen</dt><dd>" + ga + "</dd><dt>Grafik</dt><dd>" + (d.graphics ? esc(d.graphics) + ", " : "") + d.vram + " MB</dd></dl>";
+    "</dd><dt>Gasterweiterungen</dt><dd>" + ga + "</dd><dt>Grafik</dt><dd>" + (d.graphics ? esc(d.graphics) + ", " : "") + d.vram + " MB</dd>" +
+    "<dt>Fenster</dt><dd>" + (d.direct_window ? "im VM-Prozess (schnell)" : "abtrennbar (langsamer bei 3D)") + "</dd>" +
+    "<dt>3D-Renderer</dt><dd>" + (d.renderer && d.renderer.lines.length
+      ? (d.renderer.software ? '<span class="no">Software-Rendering erkannt – die Grafikkarte wird nicht genutzt</span><br>' : "") +
+        '<span style="font-size:11px;color:var(--text-muted)">' + d.renderer.lines.map(esc).join("<br>") + "</span>"
+      : "keine Angaben im VM-Log") + "</dd></dl>";
 }
 
 async function insertGuestAdditions(vm) {
@@ -706,6 +711,8 @@ async function renderDrawer() {
         S.cpuProfiles.map((p) => '<option ' + ((d.cpu_profile || "host") === p ? "selected" : "") + ">" + esc(p) + "</option>")).join("") +
       '</select><span class="hint">Ältere Windows-Versionen (7, XP, 2000) brauchen ein älteres Profil, sonst Bluescreen „UNSUPPORTED_PROCESSOR“.</span></div>' +
       switchRow("Spectre-Schutz an den Gast weitergeben", "Gibt IBRS/IBPB (Spectre-Abwehr der CPU) an das Gastsystem weiter. Bei Bluescreen 0x5D mit „IBRS“ (0x53524249) unter Windows 7 hier umschalten.", toggle("spec_ctrl", d.spec_ctrl, !off)) +
+      switchRow("Fenster im VM-Prozess (schnellere 3D-Grafik)", "VM und Fenster laufen in einem Prozess, das Bild muss nicht zwischen Prozessen kopiert werden. " +
+        "Nachteil: Stürzt die Oberfläche ab, wird die VM hart beendet.", toggle("direct_window", d.direct_window, !off)) +
       switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off || isLegacy(vm))) +
       switchRow("Wegwerf-Modus", "Alle Änderungen an der Festplatte werden beim Ausschalten verworfen (unveränderliches Abbild).", toggle("disposable", d.disposable, !off));
   } else if (tab === "policy") {
@@ -800,7 +807,7 @@ $("#overlay").addEventListener("submit", (ev) => {
 async function saveDrawer(vm) {
   const d = S.draft;
   const changes = {};
-  for (const key of ["name", "description", "color", "start_on_boot", "hidden", "network", "disposable", "type", "accelerate3d", "spec_ctrl"]) {
+  for (const key of ["name", "description", "color", "start_on_boot", "hidden", "network", "disposable", "type", "accelerate3d", "spec_ctrl", "direct_window"]) {
     if (d[key] !== vm[key]) changes[key] = d[key];
   }
   if (+d.slot !== vm.slot) changes.slot = +d.slot;
@@ -1014,7 +1021,7 @@ function renderSystem() {
   let html = pageHead("System", "Informationen und Einstellungen des VMBox-Hosts.");
   if (!h) return html + '<div class="empty">Lade …</div>';
   const yn = (v, yes, no) => '<span class="' + (v ? "yes" : "no") + '">' + (v ? yes : no) + "</span>";
-  html += '<div class="grid-2"><div class="glass panel"><h2>Host</h2><p>Der minimale Host-Rechner, auf dem VirtualBox läuft.</p><dl class="kv">' +
+  html += '<div class="grid-2"><div><div class="glass panel"><h2>Host</h2><p>Der minimale Host-Rechner, auf dem VirtualBox läuft.</p><dl class="kv">' +
     "<dt>Rechnername</dt><dd>" + esc(h.hostname) + "</dd><dt>VMBox</dt><dd>" + esc(S.state.version) + (h.live ? " (Live)" : "") + "</dd>" +
     "<dt>VirtualBox</dt><dd>" + esc(h.virtualbox) + "</dd><dt>Kernel</dt><dd>" + esc(h.kernel) + "</dd>" +
     "<dt>Prozessor</dt><dd>" + esc(h.cpu) + " (" + h.cpus + " Threads)</dd>" +
@@ -1024,7 +1031,13 @@ function renderSystem() {
     "<dt>Verschlüsselung</dt><dd>" + yn(h.encrypted, "LUKS2 aktiv", "aus") + "</dd>" +
     "<dt>TPM</dt><dd>" + yn(h.tpm, "TPM 2.0", "nicht gefunden") + "</dd>" +
     "<dt>Secure Boot</dt><dd>" + yn(h.secure_boot, "aktiv", "aus") + "</dd>" +
-    "<dt>Laufzeit</dt><dd>" + fmtUptime(h.uptime) + "</dd></dl></div><div>";
+    "<dt>Laufzeit</dt><dd>" + fmtUptime(h.uptime) + "</dd></dl></div>";
+  const g = h.graphics || {};
+  html += '<div class="glass panel"><h2>Grafik des Hosts</h2><p>Diese Grafik nutzt VirtualBox für die 3D-Beschleunigung der VMs.</p>' +
+    (g.software ? '<div class="notice warn">Es läuft nur Software-Rendering (llvmpipe) – 3D in den VMs wird dadurch sehr langsam. ' +
+      "Die Grafikkarte wird nicht erkannt oder ihr Treiber/ihre Firmware fehlt.</div>" : "") +
+    '<dl class="kv"><dt>OpenGL</dt><dd>' + (g.opengl ? esc(g.opengl) : "unbekannt") + "</dd><dt>Vulkan</dt><dd>" +
+    (g.vulkan && g.vulkan.length ? g.vulkan.map(esc).join("<br>") : "unbekannt") + "</dd></dl></div></div><div>";
   if (h.live) {
     html += '<div class="glass panel"><h2>Installation</h2><p>VMBox dauerhaft auf eine Festplatte installieren – mit verschlüsseltem VM-Speicher und optionaler TPM-Entsperrung.</p>' +
       '<button class="btn primary" data-act="install">' + icon("download") + "VMBox installieren</button></div>";

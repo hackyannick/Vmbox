@@ -155,6 +155,11 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   starten sie ohne Netzwerk; bei Bedarf am besten nur an ein internes Netz
   hängen. Die aktuellen Gasterweiterungen unterstützen diese Systeme teils
   nicht mehr – dann eine ältere Version der Gasterweiterungen verwenden.
+* **Schnelle 3D-Grafik:** VMs mit 3D laufen standardmäßig mit dem Fenster im
+  VM-Prozess (*Hardware → Fenster im VM-Prozess*), sonst würde jedes Bild
+  zwischen zwei Prozessen kopiert. *System → Grafik des Hosts* zeigt den
+  OpenGL-/Vulkan-Renderer und warnt bei Software-Rendering (llvmpipe);
+  *Hardware → Anzeige* zeigt, was VirtualBox im VM-Log zur 3D-Ausgabe meldet.
 * **3D-Beschleunigung** ist bei allen Arbeits-VMs eingeschaltet (VBoxSVGA bzw.
   VMSVGA, 256 MB Grafikspeicher bei Windows) und lässt sich unter
   *Hardware* abschalten. Sie wirkt erst, wenn im Gast die VirtualBox-

@@ -115,10 +115,37 @@ class Host:
             "encrypted": os.path.exists("/dev/mapper/vmbox-storage"),
             "secure_boot": self._secure_boot(),
             "kvm_loaded": kvm_loaded(),
+            "graphics": self.graphics(),
             "battery": self.battery(),
             "live": self.live,
             "time": int(time.time()),
         }
+
+    _graphics_cache = (0.0, None)
+
+    def graphics(self):
+        """OpenGL/Vulkan renderer of the host (what VirtualBox' 3D uses).
+        Cached for 5 minutes - glxinfo/vulkaninfo take a moment."""
+        stamp, value = self._graphics_cache
+        if value is not None and time.time() - stamp < 300:
+            return value
+        result = {"opengl": "", "vulkan": [], "software": False}
+        try:
+            out = _run("glxinfo", "-B", timeout=10)
+            m = re.search(r"OpenGL renderer string:\s*(.+)", out)
+            result["opengl"] = m.group(1).strip() if m else ""
+        except HostError:
+            pass
+        try:
+            out = _run("vulkaninfo", "--summary", timeout=10)
+            result["vulkan"] = sorted(set(m.strip() for m in re.findall(r"deviceName\s*=\s*(.+)", out)))
+        except HostError:
+            pass
+        names = [result["opengl"]] + result["vulkan"]
+        result["software"] = bool(names[0]) and all(re.search(r"llvmpipe|lavapipe|softpipe|software", n, re.I)
+                                                    for n in names if n)
+        self._graphics_cache = (time.time(), result)
+        return result
 
     @staticmethod
     def battery():
@@ -210,6 +237,10 @@ class FakeHost(Host):
     @staticmethod
     def battery():
         return {"percent": 98, "charging": True}
+
+    def graphics(self):
+        return {"opengl": "AMD Radeon 780M Graphics (radeonsi, gfx1103, LLVM 19.1.7, DRM 3.61)",
+                "vulkan": ["AMD Radeon 780M Graphics (RADV PHOENIX)", "llvmpipe (LLVM 19.1.7, 256 bits)"], "software": False}
 
     def wifi_connect(self, ssid, password=None):
         for net in self._wifi:

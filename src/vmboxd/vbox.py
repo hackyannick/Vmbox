@@ -205,14 +205,17 @@ class VBoxManage:
             args.append("--delete")
         self.run(*args, timeout=600)
 
-    def start(self, uuid, headless=False):
+    def start(self, uuid, headless=False, direct=False):
         # "separate": the VM runs in its own headless process and the window is
         # only a detachable frontend - a crash of the X session does not kill VMs.
+        # "gui" (direct): VM and window share one process - no frame copying
+        # between processes, which helps 3D, but the VM dies with the X session.
         # Right after modifyvm VirtualBox may still be releasing the session
         # lock ("already locked by a session (or being locked or unlocked)").
         for attempt in range(5):
             try:
-                self.run("startvm", uuid, "--type", "headless" if headless else "separate",
+                kind = "headless" if headless else "gui" if direct else "separate"
+                self.run("startvm", uuid, "--type", kind,
                          env=None if headless else self.gui_env, timeout=180)
                 return
             except VBoxError as exc:
