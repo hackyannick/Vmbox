@@ -29,6 +29,8 @@ const S = {
   mediaIsos: {},
   wifi: null,
   showHidden: false,
+  view: (() => { try { return localStorage.getItem("vmbox.view") || "grid"; } catch (e) { return "grid"; } })(),
+  selected: null,
   drawer: null,
   drawerTab: "general",
   draft: null,
@@ -142,6 +144,7 @@ async function onLogin() {
 
 async function loadHost() {
   try { S.host = await api("GET", "/api/host"); } catch (e) { /* ignore */ }
+  if (S.state && S.state.authenticated) { renderToolbar(); renderFooter(); }
   if (S.page === "vms") renderPage();
   if (S.page === "system") renderPage(true);
 }
@@ -227,36 +230,109 @@ $("#auth-form").addEventListener("submit", async (ev) => {
 /* ------------------------------------------------------------------ */
 /* Main shell                                                          */
 /* ------------------------------------------------------------------ */
+const TOOLBAR_PAGES = [["usb", "usb", "USB"], ["isos", "disc", "Abbilder"], ["network", "network", "Netzwerk"], ["system", "gear", "System"]];
+
 function renderApp() {
   $("#auth").hidden = true;
   $("#app").hidden = false;
   authMode = null;
-  const vms = S.state.vms || [];
-  const running = vms.filter((v) => v.running && v.type === "user").length;
-  $("#nav").innerHTML = PAGES.map(([id, ic, label]) =>
-    '<button data-page="' + id + '" class="' + (S.page === id ? "active" : "") + '">' + icon(ic) + "<span>" + label + "</span>" +
-    (id === "vms" && running ? '<span class="count">' + running + "</span>" : "") + "</button>").join("");
   $("#live-hint").hidden = !S.state.live;
-  $("#btn-lock").innerHTML = icon("lock") + "<span>Sperren</span>";
+  renderToolbar();
+  renderFooter();
   if (S.page === "vms") renderPage();
   if (S.drawer) updateDrawer();
 }
 
-$("#nav").addEventListener("click", (ev) => {
-  const btn = ev.target.closest("button[data-page]");
-  if (!btn) return;
-  S.page = btn.dataset.page;
+function renderToolbar() {
+  const vms = S.state.vms || [];
+  const running = vms.filter((v) => v.running && v.type === "user").length;
+  const tb = (attrs, ic, label, extra) => '<button class="tb ' + (attrs.cls || "") + '" ' + (attrs.data || "") + ' title="' + esc(attrs.title || label) + '">' +
+    icon(ic) + '<span class="label">' + label + (extra || "") + "</span></button>";
+  const b = S.host && S.host.battery;
+  const html =
+    '<div class="group left">' +
+      tb({ data: 'data-tb="power"', title: "Sperren, Neustart, Ausschalten" }, "power", "Power", '<span class="caret">▼</span>') +
+      tb({ data: 'data-tb="new"', title: "Neue virtuelle Maschine" }, "plus", "VM hinzufügen") +
+    "</div>" +
+    '<div class="group center"><div class="viewswitch">' +
+      '<button data-view="grid" class="' + (S.page === "vms" && S.view === "grid" ? "active" : "") + '" title="Symbole">' + icon("grid") + "</button>" +
+      '<button data-view="list" class="' + (S.page === "vms" && S.view === "list" ? "active" : "") + '" title="Liste">' + icon("list") + "</button>" +
+      '<button data-view="hidden" class="' + (S.showHidden ? "active" : "") + '" title="Ausgeblendete VMs zeigen">' + icon("eyeoff") + "</button>" +
+    '</div><span class="viewlabel">Ansicht' + (running ? ' <span class="tb-count">· ' + running + " an</span>" : "") + "</span></div>" +
+    '<div class="group right">' +
+      TOOLBAR_PAGES.map(([id, ic, label]) => tb({ cls: S.page === id ? "active" : "", data: 'data-page="' + id + '"' }, ic, label)).join("") +
+      (b ? tb({ cls: "battery", data: 'data-page="system"', title: "Akku" + (b.charging ? " (lädt)" : "") }, b.charging ? "batterycharge" : "battery",
+        '<span class="pct">' + b.percent + "%</span>") : "") +
+    "</div>";
+  if ($("#toolbar").innerHTML !== html) $("#toolbar").innerHTML = html;
+}
+
+function renderFooter() {
+  const h = S.host;
+  const vms = (S.state.vms || []).filter((v) => v.type === "user");
+  const on = vms.filter((v) => v.running).length;
+  let info = on + " von " + vms.length + " VMs an";
+  if (h) {
+    info += " · Arbeitsspeicher " + fmtBytes(h.memory_total - h.memory_free) + " / " + fmtBytes(h.memory_total) +
+      " · " + fmtBytes(h.storage.free) + " frei · " + (h.encrypted ? '<span class="ok">verschlüsselt</span>' : '<span class="warn">unverschlüsselt</span>') +
+      (h.tpm ? " · TPM 2.0" : "");
+  }
+  const html = '<span class="logo">VM<b>Box</b></span><span>' + info + '</span><span class="grow"></span>' +
+    "<span><kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>Pos1</kbd> Dashboard &nbsp; <kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>1–9</kbd> VM &nbsp; " +
+    "<kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> Leiste &nbsp; <kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd> Sperren</span>";
+  if ($("#footer").innerHTML !== html) $("#footer").innerHTML = html;
+}
+
+function goPage(page) {
+  S.page = page;
   S.rendered = {};
-  renderApp();
+  renderToolbar();
   renderPage(true);
   loadPage();
   $("#main").scrollTop = 0;
+}
+
+$("#toolbar").addEventListener("click", (ev) => {
+  const el = ev.target.closest("button");
+  if (!el) return;
+  if (el.dataset.page) return goPage(el.dataset.page);
+  if (el.dataset.view === "hidden") { S.showHidden = !S.showHidden; renderToolbar(); return goPage("vms"); }
+  if (el.dataset.view) {
+    S.view = el.dataset.view;
+    try { localStorage.setItem("vmbox.view", S.view); } catch (e) { /* private mode */ }
+    return goPage("vms");
+  }
+  if (el.dataset.tb === "new") return openCreate();
+  if (el.dataset.tb === "power") return openMenu(el, [
+    ["lock", "lock", "Bildschirm sperren"], null,
+    ["host-reboot", "restore", "VMBox neu starten"],
+    ["host-poweroff", "power", "VMBox ausschalten"],
+  ]);
 });
 
-$("#btn-lock").addEventListener("click", async () => {
-  await api("POST", "/api/lock").catch(() => {});
-  poll();
+function openMenu(anchor, items) {
+  const menu = $("#menu");
+  menu.innerHTML = items.map((it) => it ? '<button data-menu="' + it[0] + '">' + icon(it[1]) + esc(it[2]) + "</button>" : "<hr>").join("");
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = r.left + "px";
+  menu.style.top = r.bottom + 2 + "px";
+  menu.hidden = false;
+}
+document.addEventListener("mousedown", (ev) => { if (!ev.target.closest("#menu") && !ev.target.closest("[data-tb=power]")) $("#menu").hidden = true; });
+$("#menu").addEventListener("click", async (ev) => {
+  const el = ev.target.closest("[data-menu]");
+  if (!el) return;
+  $("#menu").hidden = true;
+  if (el.dataset.menu === "lock") { await api("POST", "/api/lock").catch(() => {}); return poll(); }
+  return pageAction(el.dataset.menu, el);
 });
+
+function tickTitleClock() {
+  const el = $("#title-clock");
+  if (el) el.textContent = new Date().toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+setInterval(tickTitleClock, 1000);
+tickTitleClock();
 
 function renderPage(force) {
   const renderers = { vms: renderVMs, usb: renderUSB, network: renderNetwork, isos: renderISOs, system: renderSystem };
@@ -267,7 +343,6 @@ function renderPage(force) {
   const scroll = main.scrollTop;
   main.innerHTML = html;
   main.scrollTop = scroll;
-  if (S.page === "vms") renderStats();
 }
 
 function pageHead(title, sub, actions) {
@@ -277,75 +352,89 @@ function pageHead(title, sub, actions) {
 /* ------------------------------------------------------------------ */
 /* VM overview                                                         */
 /* ------------------------------------------------------------------ */
-function renderStats() {
-  const el = $("#stats");
-  if (!el) return;
-  const h = S.host;
-  const vms = (S.state.vms || []).filter((v) => v.type === "user");
-  const running = vms.filter((v) => v.running).length;
-  const memUsed = h ? h.memory_total - h.memory_free : 0;
-  const stoUsed = h ? h.storage.total - h.storage.free : 0;
-  const stat = (ic, value, label, pct) => '<div class="stat glass"><div class="icon-wrap">' + icon(ic) + '</div><div style="flex:1;min-width:0">' +
-    '<div class="value">' + value + '</div><div class="label">' + label + "</div>" +
-    (pct !== undefined ? '<div class="meter"><div style="width:' + Math.min(100, pct).toFixed(0) + '%"></div></div>' : "") + "</div></div>";
-  el.innerHTML =
-    stat("monitor", running + " / " + vms.length, "VMs aktiv") +
-    stat("memory", h ? fmtBytes(memUsed) : "–", h ? "von " + fmtBytes(h.memory_total) + " Arbeitsspeicher" : "Arbeitsspeicher", h ? (memUsed / h.memory_total) * 100 : 0) +
-    stat("storage", h ? fmtBytes(h.storage.free) : "–", "frei für VMs", h && h.storage.total ? (stoUsed / h.storage.total) * 100 : 0) +
-    stat("shield", h ? (h.encrypted ? "Verschlüsselt" : "Unverschlüsselt") : "–", h ? (h.tpm ? "TPM 2.0 vorhanden" : "Kein TPM") + (h.secure_boot ? " · Secure Boot" : "") : "Sicherheit");
+const TILE_STATE = { running: "AN", paused: "PAUSIERT", saved: "GESPEICHERT", stopped: "AUS", busy: "BITTE WARTEN" };
+
+function wallpaper(vm) {
+  const t = vm.template || "";
+  if (vm.type === "service" || t === "service") return "wall-service";
+  const map = { windows7: "wall-win7", windowsxp: "wall-xp", windows2000: "wall-w2k", windows10: "wall-win10", windows11: "wall-win10",
+    ubuntu: "wall-ubuntu", debian: "wall-debian", fedora: "wall-fedora", linux: "wall-linux" };
+  if (map[t]) return map[t];
+  const os = vm.ostype || "";
+  if (/^Windows7/.test(os)) return "wall-win7";
+  if (/^WindowsXP/.test(os)) return "wall-xp";
+  if (/^Windows/.test(os)) return "wall-win10";
+  return "wall-linux";
 }
 
-function vmCard(vm, focus) {
+function monitor(vm, opts) {
+  opts = opts || {};
+  const st = vm.state || "running";
+  const cls = st === "running" ? "on" : st === "stopped" ? "off" : st;
+  const overlay = st === "paused" ? icon("pause") : st === "saved" ? icon("download") : st === "busy" ? icon("restore") : "";
+  return '<div class="monitor ' + cls + (opts.mini ? " mini" : "") + (opts.focused ? " focused" : "") + '" style="--vm-color:' + esc(vm.color || "#3f88e0") + '">' +
+    '<div class="bezel"><div class="screen"><div class="wall ' + wallpaper(vm) + '"></div>' + (overlay ? '<div class="overlay">' + overlay + "</div>" : "") + "</div></div>" +
+    '<div class="neck"></div><div class="base"></div></div>';
+}
+
+function tileActions(vm) {
   const st = vm.state;
-  let actions = "";
-  if (st === "stopped" || st === "saved") {
-    actions = '<button class="btn primary small" data-act="start">' + icon("play") + (st === "saved" ? "Fortsetzen" : "Starten") + "</button>";
-  } else if (st === "running") {
-    actions = (vm.type === "user" ? '<button class="btn primary small" data-act="switch">' + icon("monitor") + "Anzeigen</button>" : "") +
-      '<button class="btn small icon-only" title="Pausieren" data-act="pause">' + icon("pause") + "</button>" +
-      (vm.type === "user" && vm.policy.cd ? '<button class="btn small icon-only" title="Gasterweiterungen einlegen" data-act="guest-additions">' + icon("disc") + "</button>" : "") +
-      (vm.type === "user" ? '<button class="btn small icon-only" title="Auflösung an Fenster anpassen" data-act="resolution">' + icon("resize") + "</button>" : "") +
-      '<button class="btn small icon-only" title="Ausschalten …" data-act="power">' + icon("power") + "</button>";
-  } else if (st === "paused") {
-    actions = '<button class="btn primary small" data-act="resume">' + icon("play") + "Fortsetzen</button>" +
-      '<button class="btn small icon-only" title="Ausschalten …" data-act="power">' + icon("power") + "</button>";
-  } else {
-    actions = '<button class="btn small" disabled>Bitte warten …</button>';
+  const rb = (cls, act, ic, title) => '<button class="rbtn ' + cls + '" data-act="' + act + '" title="' + esc(title) + '">' + icon(ic) + "</button>";
+  const settings = rb("grey", "details", "gear", "Einstellungen");
+  if (st === "stopped") return rb("green", "start", "play", "Starten") + settings;
+  if (st === "saved") return rb("green", "start", "play", "Fortsetzen") + settings;
+  if (st === "paused") return rb("green", "resume", "play", "Fortsetzen") + rb("red", "power", "power", "Beenden …") + settings;
+  if (st === "running") {
+    return (vm.type === "user" ? rb("blue", "switch", "monitor", "Anzeigen") : "") + rb("blue", "pause", "pause", "Pausieren") +
+      rb("red", "power", "power", "Beenden …") + settings;
   }
-  const badges = [];
-  if (vm.disposable) badges.push('<span class="badge warn">Wegwerf</span>');
-  if (vm.start_on_boot) badges.push('<span class="badge blue">Autostart</span>');
-  if (vm.type === "service") badges.push('<span class="badge">Service</span>');
-  return '<div class="vm-card glass' + (focus ? " focused" : "") + '" data-uuid="' + vm.uuid + '" style="--vm-color:' + esc(vm.color) + '">' +
-    '<div class="band" data-act="details"><div class="os">' + osIcon(vm) + '</div><div class="title"><h3>' + esc(vm.name) + "</h3>" +
-    '<div class="os-name">' + esc(templateLabel(vm)) + "</div></div>" +
-    (vm.slot ? '<span class="slot" title="Strg+Alt+' + vm.slot + '">Slot ' + vm.slot + "</span>" : "") + "</div>" +
-    '<div class="body"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="status ' + st + '">' + STATE_LABEL[st] + "</span>" + badges.join("") + "</div>" +
-    '<div class="meta"><span>' + icon("memory") + fmtMB(vm.memory) + "</span><span>" + icon("cpu") + vm.cpus + " CPU</span><span>" +
-    icon("network") + esc(networkLabel(vm.network)) + "</span>" + (vm.accelerate3d ? "<span>" + icon("monitor") + "3D</span>" : "") + (vm.usb_attached.length ? "<span>" + icon("usb") + vm.usb_attached.length + "</span>" : "") + "</div>" +
-    '<div class="actions">' + actions + '<span class="grow"></span><button class="btn small icon-only ghost" title="Einstellungen" data-act="details">' + icon("more") + "</button></div></div></div>";
+  return "";
 }
 
 function renderVMs() {
   const vms = S.state.vms || [];
-  const user = vms.filter((v) => v.type === "user" && (!v.hidden || S.showHidden));
-  const service = vms.filter((v) => v.type === "service");
+  const shown = vms.filter((v) => !v.hidden || S.showHidden || v.type === "service")
+    .sort((a, b) => (a.type === "service") - (b.type === "service"));
   const focus = S.state.focus;
-  let html = pageHead("Virtuelle Maschinen", "Jede Aufgabe in ihrer eigenen, isolierten Umgebung.",
-    '<button class="btn" data-act="toggle-hidden">' + (S.showHidden ? "Ausgeblendete verbergen" : "Ausgeblendete zeigen") + "</button>" +
-    '<button class="btn primary" data-act="new">' + icon("plus") + "Neue VM</button>");
+  let html = "";
   if (S.host && S.host.kvm_loaded) {
     html += '<div class="notice warn">Das KVM-Kernelmodul ist geladen und belegt die Virtualisierung der CPU – VirtualBox kann so keine VMs starten. ' +
       "Bitte VMBox neu starten. Bleibt der Hinweis, im Boot-Menü mit „e“ an die linux-Zeile <b>modprobe.blacklist=kvm,kvm_amd,kvm_intel</b> anhängen.</div>";
   }
-  html += '<div class="stats" id="stats"></div>';
-  html += '<div class="section-title">Arbeitsumgebungen</div><div class="vm-grid">' + user.map((v) => vmCard(v, v.uuid === focus)).join("") +
-    '<div class="vm-card glass new" data-act="new"><div class="plus">' + icon("plus") + "</div><strong>Neue virtuelle Maschine</strong></div></div>";
-  if (service.length) {
-    html += '<div class="section-title">Service-VMs</div><div class="vm-grid">' + service.map((v) => vmCard(v, false)).join("") + "</div>";
+  if (!shown.length) {
+    return html + '<div class="empty" style="padding-top:12vh">' + monitor({ state: "stopped" }) +
+      '<p>Noch keine virtuelle Maschine.</p><button class="btn primary" data-act="new">' + icon("plus") + "VM hinzufügen</button></div>";
   }
+  if (S.view === "list") {
+    html += '<table class="vmtable"><thead><tr><th></th><th>Name</th><th>System</th><th>Status</th><th>Arbeitsspeicher</th><th>CPU</th><th>Netzwerk</th><th>Slot</th><th></th></tr></thead><tbody>' +
+      shown.map((vm) => '<tr data-uuid="' + vm.uuid + '" data-act="select" class="' + (vm.uuid === S.selected ? "selected" : "") + '">' +
+        "<td>" + monitor(vm, { mini: true, focused: vm.uuid === focus }) + "</td><td><b>" + esc(vm.name) + "</b>" + (vm.type === "service" ? ' <span class="badge">Service</span>' : "") +
+        (vm.disposable ? ' <span class="badge warn">Wegwerf</span>' : "") + "</td><td>" + esc(templateLabel(vm)) + '</td><td><span class="status ' + vm.state + '">' +
+        STATE_LABEL[vm.state] + "</span></td><td>" + fmtMB(vm.memory) + "</td><td>" + vm.cpus + "</td><td>" + esc(networkLabel(vm.network)) + "</td><td>" +
+        (vm.slot || "–") + '</td><td><div class="acts">' + tileActions(vm) + "</div></td></tr>").join("") + "</tbody></table>";
+    return html;
+  }
+  html += '<div class="tiles">' + shown.map((vm) => {
+    const sel = vm.uuid === S.selected;
+    return '<div class="tile' + (sel ? " selected" : "") + '" data-uuid="' + vm.uuid + '" data-act="select" title="Doppelklick: ' +
+      (vm.running && vm.type === "user" ? "anzeigen" : "starten") + '">' +
+      '<div class="tile-name">' + (vm.type === "service" ? '<span class="warnmark">⚠</span>' : "") + esc(vm.name) +
+      (vm.slot ? '<span class="slot">[' + vm.slot + "]</span>" : "") + "</div>" + monitor(vm, { focused: vm.uuid === focus }) +
+      '<div class="tile-state ' + vm.state + '">' + TILE_STATE[vm.state] + "</div>" +
+      '<div class="tile-actions">' + tileActions(vm) + "</div></div>";
+  }).join("") + "</div>";
   return html;
 }
+
+$("#main").addEventListener("dblclick", (ev) => {
+  const tile = ev.target.closest("[data-act=select]");
+  if (!tile || ev.target.closest("button")) return;
+  const vm = vmById(tile.dataset.uuid);
+  if (!vm) return;
+  if (vm.running && vm.type === "user" && vm.state === "running") run(api("POST", "/api/vms/" + vm.uuid + "/switch")).catch(() => {});
+  else if (vm.state === "stopped" || vm.state === "saved") run(api("POST", "/api/vms/" + vm.uuid + "/start"), "„" + vm.name + "“ wird gestartet").catch(() => {});
+  else if (vm.state === "paused") run(api("POST", "/api/vms/" + vm.uuid + "/resume")).catch(() => {});
+});
 
 $("#main").addEventListener("click", async (ev) => {
   const el = ev.target.closest("[data-act]");
@@ -355,6 +444,9 @@ $("#main").addEventListener("click", async (ev) => {
   const uuid = card && card.dataset.uuid;
   const vm = uuid && vmById(uuid);
   switch (act) {
+    case "select":
+      S.selected = uuid;
+      return renderPage(true);
     case "new": return openCreate();
     case "toggle-hidden": S.showHidden = !S.showHidden; return renderPage(true);
     case "details": return openDrawer(uuid);
@@ -486,7 +578,7 @@ async function openCreate() {
     openOverlay('<form id="create-form"><div class="modal-head"><h2>Neue virtuelle Maschine</h2><p>Wähle eine Vorlage – die Werte lassen sich anpassen.</p></div>' +
       '<div class="modal-body"><div class="templates">' + S.templates.map((x) =>
         '<button type="button" data-tpl="' + x.id + '" class="' + (x.id === draft.template ? "active" : "") + '">' +
-        osIcon({ ostype: x.ostype, type: x.type }) + esc(x.label) + "</button>").join("") + "</div>" +
+        monitor({ template: x.id, ostype: x.ostype, type: x.type, state: "running" }, { mini: true }) + esc(x.label) + "</button>").join("") + "</div>" +
       '<div class="row"><div class="field"><label>Name</label><input class="input" name="name" maxlength="64" value="' + esc(draft.name) + '" placeholder="z. B. Büro, Banking, Entwicklung" required></div>' +
       '<div class="field" style="flex:none"><label>Farbe</label><div class="colors" style="height:40px;align-items:center">' + S.colors.map((c) =>
         '<button type="button" data-color="' + c + '" class="' + (c === draft.color ? "active" : "") + '" style="background:' + c + '"></button>').join("") + "</div></div></div>" +

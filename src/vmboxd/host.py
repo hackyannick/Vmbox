@@ -115,9 +115,29 @@ class Host:
             "encrypted": os.path.exists("/dev/mapper/vmbox-storage"),
             "secure_boot": self._secure_boot(),
             "kvm_loaded": kvm_loaded(),
+            "battery": self.battery(),
             "live": self.live,
             "time": int(time.time()),
         }
+
+    @staticmethod
+    def battery():
+        """Laptop battery as {"percent", "charging"}, or None on desktops."""
+        base = "/sys/class/power_supply"
+        try:
+            names = sorted(n for n in os.listdir(base) if n.startswith("BAT"))
+        except OSError:
+            return None
+        for name in names:
+            try:
+                with open(os.path.join(base, name, "capacity")) as fh:
+                    percent = int(fh.read().strip())
+                with open(os.path.join(base, name, "status")) as fh:
+                    status = fh.read().strip()
+            except (OSError, ValueError):
+                continue
+            return {"percent": max(0, min(100, percent)), "charging": status in ("Charging", "Full")}
+        return None
 
     @staticmethod
     def _secure_boot():
@@ -186,6 +206,10 @@ class FakeHost(Host):
 
     def wifi_networks(self):
         return list(self._wifi)
+
+    @staticmethod
+    def battery():
+        return {"percent": 98, "charging": True}
 
     def wifi_connect(self, ssid, password=None):
         for net in self._wifi:

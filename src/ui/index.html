@@ -15,6 +15,7 @@
       <div class="date" id="auth-date"></div>
     </div>
     <form class="card glass" id="auth-form" autocomplete="off">
+      <div class="wtitle"><img src="/logo.svg" alt="">VMBox Receiver</div>
       <img src="/logo.svg" alt="">
       <h1 id="auth-title">VMBox</h1>
       <p id="auth-text"></p>
@@ -27,30 +28,16 @@
   </section>
 
   <div id="app" hidden>
-    <aside id="sidebar">
-      <div class="brand">
-        <img src="/logo.svg" alt="">
-        <div><div class="name">VMBox</div><div class="sub">Secure Desktop</div></div>
-      </div>
-      <nav id="nav"></nav>
-      <div class="spacer"></div>
-      <div class="live-hint" id="live-hint" hidden>
-        <strong>Live-Modus</strong>
-        Änderungen gehen beim Neustart verloren. Unter „System“ kannst du VMBox installieren.
-      </div>
-      <div class="bottom">
-        <button class="btn ghost" id="btn-lock"></button>
-      </div>
-      <dl class="shortcuts">
-        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>Pos1</kbd></dt><dd>Dashboard</dd>
-        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>1–9</kbd></dt><dd>VM im Slot</dd>
-        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>Blättern</dd>
-        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>L</kbd></dt><dd>Sperren</dd>
-        <dt><kbd>Strg</kbd><kbd>Alt</kbd><kbd>F</kbd></dt><dd>Leiste</dd>
-      </dl>
-    </aside>
+    <header id="titlebar">
+      <img src="/logo.svg" alt=""><span>VMBox Receiver</span>
+      <span class="live" id="live-hint" hidden title="Änderungen gehen beim Neustart verloren – unter System installieren">LIVE</span>
+      <span class="grow"></span><span id="title-clock"></span>
+    </header>
+    <nav id="toolbar"></nav>
     <main id="main"></main>
+    <footer id="footer"></footer>
   </div>
+  <div id="menu" hidden></div>
 
   <div id="overlay"></div>
   <div id="toasts"></div>

@@ -10,9 +10,17 @@ strikt von den anderen getrennt. Umgeschaltet wird per Tastenkürzel oder
 Anders als OpenXT (Xen) nutzt VMBox im Untergrund **Oracle VirtualBox**.
 Basis ist Debian 13 „trixie“, gebaut mit `live-build` als Live-/Installer-ISO.
 
+Die Oberfläche („VMBox Receiver“) ist dem Citrix XenClient Receiver, dem
+Vorgänger von OpenXT, nachempfunden – im blauen Farbschema: Titelleiste,
+Werkzeugleiste mit Symbolen, VMs als Monitore mit ihrem Status darunter und
+runden Aktionsknöpfen an der ausgewählten VM. Doppelklick auf einen Monitor
+startet die VM bzw. wechselt in sie.
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
-| Sperrbildschirm | Neue VM | Richtlinien |
+![Listenansicht](docs/screenshots/liste.png)
+
+| Sperrbildschirm | Neue VM | Einstellungen |
 |---|---|---|
 | ![](docs/screenshots/sperrbildschirm.png) | ![](docs/screenshots/neue-vm.png) | ![](docs/screenshots/richtlinien.png) |
 
