@@ -7,7 +7,9 @@
 #   VMBOX_DIST      Debian release of the image          (default: trixie)
 #   VBOX_DIST       release of the Oracle VirtualBox repo (default: VMBOX_DIST)
 #   VBOX_PACKAGE    e.g. virtualbox-7.2                   (default: newest)
-#   VBOX_KEY_FILE   local copy of oracle_vbox_2016.asc    (default: download)
+#   VBOX_KEY_FILE   oracle_vbox_2016.asc to use (default: keys/ in this
+#                   repository, otherwise downloaded; the fingerprint is
+#                   always checked)
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
@@ -15,7 +17,10 @@ ROOT=$PWD
 LIVE=$ROOT/live
 OUT=$ROOT/out
 VERSION=$(cat VERSION)
-VBOX_KEY_URL=https://www.virtualbox.org/download/oracle_vbox_2016.asc
+VBOX_KEY_URLS=(
+    https://www.virtualbox.org/download/oracle_vbox_2016.asc
+    "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0xB9F8D658297AF3EFC18D5CDFA2F683C52980AECF"
+)
 VBOX_KEY_FPR=B9F8D658297AF3EFC18D5CDFA2F683C52980AECF
 export VMBOX_DIST=${VMBOX_DIST:-trixie}
 
@@ -40,10 +45,14 @@ echo "==> Oracle-VirtualBox-Signaturschlüssel prüfen"
 GNUPGHOME=$(mktemp -d)
 export GNUPGHOME
 trap 'rm -rf "$GNUPGHOME"' EXIT
-if [ -n "${VBOX_KEY_FILE:-}" ]; then
+VBOX_KEY_FILE=${VBOX_KEY_FILE:-$ROOT/keys/oracle_vbox_2016.asc}
+if [ -s "$VBOX_KEY_FILE" ]; then
     cp "$VBOX_KEY_FILE" "$GNUPGHOME/key.asc"
 else
-    curl -fsSL "$VBOX_KEY_URL" -o "$GNUPGHOME/key.asc"
+    for url in "${VBOX_KEY_URLS[@]}"; do
+        curl -fsSL "$url" -o "$GNUPGHOME/key.asc" && break
+        echo "Schlüssel nicht erreichbar: $url" >&2
+    done
 fi
 fpr=$(gpg --batch --with-colons --show-keys "$GNUPGHOME/key.asc" | awk -F: '/^fpr/ {print $10; exit}')
 if [ "$fpr" != "$VBOX_KEY_FPR" ]; then
