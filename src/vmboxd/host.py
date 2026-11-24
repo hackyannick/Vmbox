@@ -65,6 +65,112 @@ def _bt_fields(text):
     return fields
 
 
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|[\x01\x02\r]")
+
+
+class BluetoothSession:
+    """One long-running ``bluetoothctl``, fed through a pipe.
+
+    Bluetooth LE mice (e.g. Logitech M650) only pair reliably when discovery
+    keeps running while pairing (BlueZ drops unpaired devices ~30 s after a
+    scan ends) and an agent stays registered for the whole process - which
+    single ``bluetoothctl <command>`` calls cannot do."""
+
+    CONFIRM_RE = re.compile(r"Confirm passkey|Request confirmation|Authorize service|Accept pairing", re.I)
+
+    def __init__(self, argv=("bluetoothctl",)):
+        self.argv = list(argv)
+        self.proc = None
+        self.lines = []          # [(seq, text)]
+        self.seq = 0
+        self.cond = threading.Condition()
+        self.lock = threading.Lock()
+        self._scan_timer = None
+
+    def _ensure(self):
+        if self.proc and self.proc.poll() is None:
+            return
+        try:
+            self.proc = subprocess.Popen(self.argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT, text=True, bufsize=1)
+        except OSError as exc:
+            raise HostError("bluetoothctl nicht verfügbar: %s" % exc) from exc
+        threading.Thread(target=self._reader, args=(self.proc,), daemon=True, name="bt-session").start()
+        self._write("agent NoInputNoOutput")
+        self._write("default-agent")
+
+    def _reader(self, proc):
+        for raw in proc.stdout:
+            text = ANSI_RE.sub("", raw).strip()
+            if not text:
+                continue
+            with self.cond:
+                self.seq += 1
+                self.lines.append((self.seq, text))
+                del self.lines[:-400]
+                self.cond.notify_all()
+            if self.CONFIRM_RE.search(text):
+                self._write("yes")       # just works: accept the pairing request
+
+    def _write(self, command):
+        try:
+            self.proc.stdin.write(command + "\n")
+            self.proc.stdin.flush()
+        except (OSError, ValueError) as exc:
+            raise HostError("bluetoothctl beendet: %s" % exc) from exc
+
+    def run(self, command, ok, fail=r"Failed|org\.bluez\.Error|not available", timeout=20, accept=None):
+        """Send ``command`` and wait for a line matching ``ok`` (or ``accept``,
+        e.g. "already paired"); a line matching ``fail`` raises HostError."""
+        with self.lock:
+            self._ensure()
+            with self.cond:
+                start = self.seq
+            self._write(command)
+            deadline = time.monotonic() + timeout
+            with self.cond:
+                while True:
+                    for seq, text in self.lines:
+                        if seq <= start:
+                            continue
+                        if re.search(ok, text) or (accept and re.search(accept, text)):
+                            return text
+                        if re.search(fail, text):
+                            raise HostError(_bt_message(text))
+                    start = self.seq
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise HostError("Keine Antwort vom Gerät – bitte erneut versuchen")
+                    self.cond.wait(remaining)
+
+    def seen(self, mac, timeout):
+        """Wait until discovery reports ``mac`` (or it is already known)."""
+        deadline = time.monotonic() + timeout
+        with self.cond:
+            while time.monotonic() < deadline:
+                if any(mac in text for _, text in self.lines):
+                    return True
+                self.cond.wait(max(0.1, deadline - time.monotonic()))
+        return False
+
+    def scan(self, seconds):
+        self.run("scan on", ok=r"Discovery started|Discovering: yes|SetDiscoveryFilter success",
+                 accept=r"InProgress|Already", timeout=10)
+        if self._scan_timer:
+            self._scan_timer.cancel()
+        self._scan_timer = threading.Timer(seconds, self.stop_scan)
+        self._scan_timer.daemon = True
+        self._scan_timer.start()
+
+    def stop_scan(self):
+        try:
+            with self.lock:
+                if self.proc and self.proc.poll() is None:
+                    self._write("scan off")
+        except HostError:
+            pass
+
+
 def split_nmcli(line):
     """Split a ``nmcli -t`` line on unescaped colons."""
     fields, current, escape = [], [], False
@@ -302,16 +408,19 @@ class Host:
                 pass  # no permission or no rfkill switch - power on may still work
         _btctl("power", "on" if on else "off")
 
-    def bluetooth_scan(self, seconds=15):
-        """Search for devices in the background; results show up in the list."""
-        self._scan_until = time.monotonic() + seconds
+    _bt_session = None
 
-        def scan():
-            try:
-                _run("bluetoothctl", "--timeout", str(seconds), "scan", "on", timeout=seconds + 10)
-            except HostError:
-                pass
-        threading.Thread(target=scan, daemon=True, name="bt-scan").start()
+    @property
+    def bt(self):
+        if self._bt_session is None:
+            self._bt_session = BluetoothSession()
+        return self._bt_session
+
+    def bluetooth_scan(self, seconds=60):
+        """Search for devices; discovery keeps running for ``seconds`` so that
+        found devices stay available for pairing."""
+        self.bt.scan(seconds)
+        self._scan_until = time.monotonic() + seconds
 
     @staticmethod
     def _mac(mac):
@@ -321,11 +430,17 @@ class Host:
         return mac
 
     def bluetooth_pair(self, mac):
-        """Pair (mice and keyboards use "just works"), trust and connect."""
+        """Pair (mice use "just works"), trust and connect - all in one
+        bluetoothctl session with discovery running, as Bluetooth LE needs."""
         mac = self._mac(mac)
-        _btctl("--agent", "NoInputNoOutput", "pair", mac, timeout=45)
-        _btctl("trust", mac)
-        _btctl("connect", mac, timeout=25)
+        bt = self.bt
+        self.bluetooth_scan(60)
+        if not bt.seen(mac, 15):
+            raise HostError("Gerät nicht gefunden – bitte in den Kopplungsmodus versetzen und erneut suchen")
+        bt.run("pair " + mac, ok=r"Pairing successful", accept=r"AlreadyExists|Paired: yes", timeout=60)
+        bt.run("trust " + mac, ok=r"trust succeeded|Trusted: yes", timeout=15)
+        bt.run("connect " + mac, ok=r"Connection successful|Connected: yes", accept=r"AlreadyConnected", timeout=30)
+        bt.stop_scan()
 
     def bluetooth_connect(self, mac):
         _btctl("connect", self._mac(mac), timeout=25)

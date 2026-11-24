@@ -933,7 +933,8 @@ function renderBluetooth() {
     (paired.length ? paired.map(row).join("") : '<div class="empty" style="padding:18px">Noch keine Geräte gekoppelt.</div>') + "</div>";
   html += '<div class="section-title">Gefundene Geräte</div><div class="glass list">' + (found.length ? found.map(row).join("")
     : '<div class="empty" style="padding:18px">' + (bt.adapter.discovering ? "Suche läuft – Gerät in den Kopplungsmodus versetzen …"
-      : "Gerät in den Kopplungsmodus versetzen (bei Mäusen meist eine Taste an der Unterseite) und „Geräte suchen“ drücken.") + "</div>") + "</div>";
+      : "Gerät in den Kopplungsmodus versetzen und „Geräte suchen“ drücken. Logitech-Mäuse (z. B. M650): Easy-Switch-/Verbindungstaste " +
+        "3 Sekunden halten, bis die LED schnell blinkt.") + "</div>") + "</div>";
   return html;
 }
 
@@ -1169,7 +1170,7 @@ async function pageAction(act, el) {
     return run(api("POST", "/api/media/eject", { device: el.dataset.device }), "Der Stick kann jetzt entfernt werden").then(loadPage).catch(() => {});
   }
   if (act === "bt-power") return run(api("POST", "/api/bluetooth/power", { on: el.dataset.on === "1" })).then(loadPage).catch(() => {});
-  if (act === "bt-scan") return run(api("POST", "/api/bluetooth/scan"), "Suche läuft 15 Sekunden").then(loadPage).catch(() => {});
+  if (act === "bt-scan") return run(api("POST", "/api/bluetooth/scan"), "Suche läuft (60 Sekunden)").then(loadPage).catch(() => {});
   if (act === "bt-pair") return btAction("pair", el.dataset.mac, "Koppeln");
   if (act === "bt-connect") return btAction("connect", el.dataset.mac, "Verbinden");
   if (act === "bt-disconnect") return btAction("disconnect", el.dataset.mac, "Trennen");

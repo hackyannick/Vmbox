@@ -126,7 +126,10 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   eigene Treiber mitbringt.
 * **Bluetooth** (Werkzeugleiste → *Bluetooth*): Mäuse, Tastaturen und Headsets
   mit dem Host koppeln – „Geräte suchen“, „Koppeln“ (inkl. Vertrauen und
-  Verbinden), Trennen, Entfernen. Gekoppelte Eingabegeräte funktionieren im
+  Verbinden), Trennen, Entfernen. Bluetooth-LE-Geräte (z. B. Logitech M650)
+  werden in einer durchgehenden `bluetoothctl`-Sitzung bei laufender Suche
+  gekoppelt; das Kernelmodul `uhid` für LE-Eingabegeräte wird beim Start
+  geladen. Gekoppelte Eingabegeräte funktionieren im
   Dashboard und in allen VMs. Firmware für Intel-, Realtek-, MediaTek-,
   Atheros- und Broadcom-Chips ist im Image.
 * **Skalierung für hochauflösende Displays** (*System → Darstellung*):
