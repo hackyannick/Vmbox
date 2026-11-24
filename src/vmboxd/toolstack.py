@@ -43,6 +43,7 @@ def host_cpu_vendor():
 
 # Height of the VMBox top bar (see vmbox-shell): VM windows get the rest.
 BAR_HEIGHT = 37
+SCALES = (1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0)
 COMMON_VIDEO_MODES = [(1920, 1080), (1920, 1200), (1600, 900), (1366, 768), (1280, 720)]
 MAX_CUSTOM_MODES = 8
 
@@ -119,6 +120,7 @@ class Toolstack:
         self._window_missing = {}
         self._mode_hinted = {}
         self.bar_hidden = lambda: False
+        self.ui_scale = lambda: 1.0      # effective VMBox scale (HiDPI), set by the App
         self.is_locked = lambda: False
 
     # ------------------------------------------------------------------ #
@@ -177,6 +179,7 @@ class Toolstack:
             "cpu_profile": x("CPUProfile", ""),
             "spec_ctrl": _bool(x("SpecCtrl")),
             "direct_window": _bool(x("DirectWindow")),
+            "scale": x("Scale", "auto"),
             "vram": int(info.get("vram", 0) or 0),
             "network": network,
             "disk": "" if disk in ("none", "emptydrive") else disk,
@@ -410,6 +413,7 @@ class Toolstack:
             vm = self.get_vm(uuid)
             stopped = vm["state"] in ("stopped",)
             meta, modify = {}, []
+            scale_changed = False
 
             def needs_stop(what):
                 if not stopped:
@@ -439,6 +443,17 @@ class Toolstack:
                 modify += ["--cpu-profile", profile]
                 # "host" is stored explicitly so the legacy default is not re-applied
                 meta["CPUProfile"] = profile
+            if "scale" in changes and str(changes["scale"]) != vm["scale"]:
+                value = str(changes["scale"])
+                if value != "auto":
+                    try:
+                        if float(value) not in SCALES:
+                            raise ValueError
+                    except ValueError:
+                        raise ToolstackError("Ungültige Skalierung") from None
+                    value = "%g" % float(value)
+                meta["Scale"] = value
+                scale_changed = True
             if "direct_window" in changes and bool(changes["direct_window"]) != vm["direct_window"]:
                 needs_stop("Die Fensterart")
                 meta["DirectWindow"] = _flag(changes["direct_window"])
@@ -522,6 +537,10 @@ class Toolstack:
             for key, value in meta.items():
                 self.vbox.set_extradata(uuid, P + key, value)
             self.invalidate()
+            if scale_changed:
+                # VirtualBox applies the scale factor at once; the guest gets a new size
+                self._apply_scale_factor(self.get_vm(uuid))
+                self._mode_hinted.pop(uuid, None)
         return self.get_vm(uuid)
 
     def insert_guest_additions(self, uuid):
@@ -583,13 +602,45 @@ class Toolstack:
         except DisplayError:
             size = None
         if size:
-            modes += [(size[0], size[1] - BAR_HEIGHT), size]
+            modes += [(size[0], size[1] - self.bar_height()), size]
         result = []
         for w, h in modes + COMMON_VIDEO_MODES:
             mode = (w - w % 8, h)
             if mode[0] >= 640 and mode[1] >= 480 and mode not in result:
                 result.append(mode)
         return result[:MAX_CUSTOM_MODES]
+
+    def bar_height(self):
+        return 0 if self.bar_hidden() else int(round(BAR_HEIGHT * self.ui_scale()))
+
+    def vm_scale(self, vm):
+        """Scale of a VM's picture: its own setting or, with "auto", VMBox's."""
+        try:
+            return float(vm.get("scale")) if vm.get("scale") not in (None, "", "auto") else float(self.ui_scale())
+        except ValueError:
+            return 1.0
+
+    @staticmethod
+    def _scaled(size, scale):
+        """Guest resolution for a window: VirtualBox enlarges it by ``scale``."""
+        if not size:
+            return None
+        return (int(size[0] / scale), int(size[1] / scale))
+
+    def _apply_scale_factor(self, vm):
+        scale = self.vm_scale(vm)
+        try:
+            self.vbox.set_extradata(vm["uuid"], "GUI/ScaleFactor", None if scale == 1.0 else ("%g" % scale))
+        except VBoxError as exc:
+            log.warning("could not set scale factor for %s: %s", vm["name"], exc)
+
+    def refresh_scaling(self):
+        """VMBox's scale changed: update the VirtualBox scale factor of all VMs
+        that follow it and send new resolution hints."""
+        for vm in self.list_vms():
+            if vm["type"] == "user" and vm["scale"] == "auto":
+                self._apply_scale_factor(vm)
+        self._mode_hinted.clear()
 
     def window_size(self):
         """Size of a VM window: the primary screen below the VMBox bar
@@ -598,7 +649,7 @@ class Toolstack:
             size = self.display.screen_size()
         except DisplayError:
             return None
-        bar = 0 if self.bar_hidden() else BAR_HEIGHT
+        bar = self.bar_height()
         if not size or size[1] <= bar:
             return None
         return (size[0], size[1] - bar)
@@ -620,8 +671,10 @@ class Toolstack:
             except DisplayError:
                 window = None
         guest = self._parse_video_mode(info.get("VideoMode"))
-        target = window or self.window_size()
+        scale = self.vm_scale(vm)
+        target = self._scaled(window or self.window_size(), scale)
         return {
+            "scale": scale,
             "guest": list(guest) if guest else None,
             "window": list(window) if window else None,
             "target": list(target) if target else None,
@@ -689,15 +742,16 @@ class Toolstack:
                 if vm["state"] != "running":
                     self._mode_hinted.pop(uuid, None)
                 continue
-            if self._mode_hinted.get(uuid) == size:
+            target = self._scaled(size, self.vm_scale(vm))
+            if self._mode_hinted.get(uuid) == target:
                 continue
             try:
-                self.vbox.control(uuid, "setvideomodehint", size[0], size[1], 32)
-                self._mode_hinted[uuid] = size
-                log.info("resolution hint %dx%d for %s", size[0], size[1], vm["name"])
+                self.vbox.control(uuid, "setvideomodehint", target[0], target[1], 32)
+                self._mode_hinted[uuid] = target
+                log.info("resolution hint %dx%d for %s", target[0], target[1], vm["name"])
             except VBoxError as exc:
                 log.warning("resolution hint for %s failed: %s", vm["name"], exc)
-                self._mode_hinted[uuid] = size   # do not retry every few seconds
+                self._mode_hinted[uuid] = target   # do not retry every few seconds
 
     def _apply_video_modes(self, uuid):
         try:
@@ -712,6 +766,7 @@ class Toolstack:
         """Re-apply hardening and policy before every start, in case somebody
         changed the machine behind our back with VBoxManage."""
         self._apply_video_modes(vm["uuid"])
+        self._apply_scale_factor(vm)
         if not vm["cpu_profile"] and self._legacy_cpu_profile(vm["template"]):
             # VMs created before the legacy CPU profile existed get it now.
             self._apply_cpu_profile(vm["uuid"], vm["template"])

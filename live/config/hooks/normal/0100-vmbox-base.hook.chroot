@@ -6,7 +6,8 @@ set -e
 if ! id vmbox >/dev/null 2>&1; then
     adduser --system --group --home /home/vmbox --shell /usr/sbin/nologin --gecos "VMBox" vmbox
 fi
-for group in audio video input render plugdev; do
+# "bluetooth": BlueZ only lets members of this group use it over D-Bus.
+for group in audio video input render plugdev bluetooth; do
     getent group "$group" >/dev/null && usermod -aG "$group" vmbox
 done
 install -d -m 0700 -o vmbox -g vmbox /home/vmbox /var/lib/vmbox /var/lib/vmbox/isos

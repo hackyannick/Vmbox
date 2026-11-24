@@ -32,6 +32,8 @@ class Shell:
         manager = WebKit2.WebsiteDataManager.new_ephemeral()
         self.context = WebKit2.WebContext.new_with_website_data_manager(manager)
         self.context.set_cache_model(WebKit2.CacheModel.DOCUMENT_VIEWER)
+        self.scale = 1.0
+        self.views = []
         self.bar = self._window("VMBox Leiste", URL + "/bar", dock=True)
         self.dashboard = self._window("VMBox Dashboard", URL + "/", dock=False)
         display = Gdk.Display.get_default()
@@ -43,16 +45,31 @@ class Shell:
         self.bar_visible = True
         threading.Thread(target=self._watch_bar_setting, daemon=True).start()
 
-    # -- bar on/off (Strg+Alt+F, setting stored by vmboxd) -------------------
+    # -- bar on/off (Strg+Alt+F) and scaling, both stored by vmboxd ----------
     def _watch_bar_setting(self):
         while True:
             try:
                 with urllib.request.urlopen(URL + "/api/state", timeout=2) as resp:
-                    hidden = bool(json.load(resp).get("bar_hidden"))
-                GLib.idle_add(self._apply_bar_visibility, not hidden)
-            except (OSError, ValueError):
+                    state = json.load(resp)
+                GLib.idle_add(self._apply_scale, float(state.get("ui_scale_effective") or 1.0))
+                GLib.idle_add(self._apply_bar_visibility, not bool(state.get("bar_hidden")))
+            except (OSError, ValueError, TypeError):
                 pass
             time.sleep(0.5)
+
+    @property
+    def bar_height(self):
+        return int(round(BAR_HEIGHT * self.scale))
+
+    def _apply_scale(self, scale):
+        """HiDPI: enlarge dashboard and bar (WebKit zoom) and the bar's strut."""
+        if abs(scale - self.scale) < 0.01:
+            return False
+        self.scale = scale
+        for view in self.views:
+            view.set_zoom_level(scale)
+        self._place_bar()
+        return False
 
     def _apply_bar_visibility(self, visible):
         if visible == self.bar_visible:
@@ -80,7 +97,9 @@ class Shell:
         view.connect("context-menu", lambda *_: not DEBUG)
         view.connect("load-failed", self._load_failed)
         view.connect("web-process-terminated", lambda v, *_: GLib.timeout_add_seconds(1, self._reload, v))
+        view.set_zoom_level(self.scale)
         view.load_uri(url)
+        self.views.append(view)
         return view
 
     def _window(self, title, url, dock):
@@ -106,8 +125,8 @@ class Shell:
 
     def _place_bar(self):
         geo = self._monitor_geometry()
-        self.bar.set_size_request(geo.width, BAR_HEIGHT)
-        self.bar.resize(geo.width, BAR_HEIGHT)
+        self.bar.set_size_request(geo.width, self.bar_height)
+        self.bar.resize(geo.width, self.bar_height)
         self.bar.move(geo.x, geo.y)
         if self.bar.get_realized():
             self._set_strut()
@@ -119,7 +138,7 @@ class Shell:
         if gdk_window is None:
             return False
         xid = gdk_window.get_xid()
-        top = geo.y + BAR_HEIGHT
+        top = geo.y + self.bar_height
         partial = "0, 0, %d, 0, 0, 0, 0, 0, %d, %d, 0, 0" % (top, geo.x, geo.x + geo.width - 1)
         for prop, value in (("_NET_WM_STRUT_PARTIAL", partial), ("_NET_WM_STRUT", "0, 0, %d, 0" % top)):
             subprocess.run(["xprop", "-id", str(xid), "-f", prop, "32c", "-set", prop, value], check=False)

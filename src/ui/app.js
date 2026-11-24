@@ -24,6 +24,8 @@ const S = {
   isos: [],
   networks: [],
   usb: [],
+  bt: null,
+  btBusy: {},
   cpuProfiles: [],
   media: { devices: [], jobs: [] },
   mediaIsos: {},
@@ -154,6 +156,9 @@ async function loadPage() {
   if (!S.state || !S.state.authenticated) return;
   try {
     if (S.page === "usb") S.usb = (await api("GET", "/api/usb")).devices;
+    if (S.page === "bluetooth") {
+      try { S.bt = await api("GET", "/api/bluetooth"); } catch (e) { S.bt = { adapter: { available: false, error: e.message }, devices: [] }; }
+    }
     if (S.page === "network") {
       S.networks = (await api("GET", "/api/networks")).networks;
       try { S.wifi = await api("GET", "/api/wifi"); } catch (e) { S.wifi = { networks: [], devices: [], error: e.message }; }
@@ -167,7 +172,7 @@ async function loadPage() {
   } catch (e) { /* handled by poll */ }
   renderPage();
 }
-setInterval(() => { if (S.page === "usb" || S.page === "isos") loadPage(); }, 2000);
+setInterval(() => { if (S.page === "usb" || S.page === "isos" || S.page === "bluetooth") loadPage(); }, 2000);
 
 /* ------------------------------------------------------------------ */
 /* Auth screen                                                         */
@@ -230,7 +235,9 @@ $("#auth-form").addEventListener("submit", async (ev) => {
 /* ------------------------------------------------------------------ */
 /* Main shell                                                          */
 /* ------------------------------------------------------------------ */
-const TOOLBAR_PAGES = [["usb", "usb", "USB"], ["isos", "disc", "Abbilder"], ["network", "network", "Netzwerk"], ["system", "gear", "System"]];
+const TOOLBAR_PAGES = [["usb", "usb", "USB"], ["bluetooth", "bluetooth", "Bluetooth"], ["isos", "disc", "Abbilder"], ["network", "network", "Netzwerk"], ["system", "gear", "System"]];
+const SCALE_OPTIONS = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+const pct = (v) => Math.round(v * 100) + " %";
 
 function renderApp() {
   $("#auth").hidden = true;
@@ -335,7 +342,7 @@ setInterval(tickTitleClock, 1000);
 tickTitleClock();
 
 function renderPage(force) {
-  const renderers = { vms: renderVMs, usb: renderUSB, network: renderNetwork, isos: renderISOs, system: renderSystem };
+  const renderers = { vms: renderVMs, usb: renderUSB, bluetooth: renderBluetooth, network: renderNetwork, isos: renderISOs, system: renderSystem };
   const html = renderers[S.page]();
   if (!force && S.rendered[S.page] === html) return;
   S.rendered[S.page] = html;
@@ -711,6 +718,11 @@ async function renderDrawer() {
         S.cpuProfiles.map((p) => '<option ' + ((d.cpu_profile || "host") === p ? "selected" : "") + ">" + esc(p) + "</option>")).join("") +
       '</select><span class="hint">Ältere Windows-Versionen (7, XP, 2000) brauchen ein älteres Profil, sonst Bluescreen „UNSUPPORTED_PROCESSOR“.</span></div>' +
       switchRow("Spectre-Schutz an den Gast weitergeben", "Gibt IBRS/IBPB (Spectre-Abwehr der CPU) an das Gastsystem weiter. Bei Bluescreen 0x5D mit „IBRS“ (0x53524249) unter Windows 7 hier umschalten.", toggle("spec_ctrl", d.spec_ctrl, !off)) +
+      '<div class="field" style="margin-top:14px"><label>Anzeige-Skalierung</label><select class="input" data-field="scale">' +
+      '<option value="auto" ' + ((d.scale || "auto") === "auto" ? "selected" : "") + ">Wie VMBox (" + pct((S.state && S.state.ui_scale_effective) || 1) + ")</option>" +
+      SCALE_OPTIONS.map((v) => '<option value="' + v + '" ' + (d.scale !== "auto" && +d.scale === v ? "selected" : "") + ">" + pct(v) +
+        (v === 1 ? " (native Auflösung)" : "") + "</option>").join("") +
+      '</select><span class="hint">VirtualBox vergrößert das Bild der VM; der Gast bekommt dafür eine entsprechend kleinere Auflösung. Wirkt sofort bei laufender VM.</span></div>' +
       switchRow("Fenster im VM-Prozess (schnellere 3D-Grafik)", "VM und Fenster laufen in einem Prozess, das Bild muss nicht zwischen Prozessen kopiert werden. " +
         "Nachteil: Stürzt die Oberfläche ab, wird die VM hart beendet.", toggle("direct_window", d.direct_window, !off)) +
       switchRow("3D-Beschleunigung", "Hardwarebeschleunigte Grafik (Direct3D/OpenGL) – z. B. für Aero unter Windows 7. Benötigt die Gasterweiterungen im Gast.", toggle("accelerate3d", d.accelerate3d, !off || isLegacy(vm))) +
@@ -812,6 +824,7 @@ async function saveDrawer(vm) {
   }
   if (+d.slot !== vm.slot) changes.slot = +d.slot;
   if ((d.cpu_profile || "host") !== (vm.cpu_profile || "host")) changes.cpu_profile = d.cpu_profile;
+  if (String(d.scale || "auto") !== String(vm.scale || "auto")) changes.scale = d.scale;
   if (+d.memory !== vm.memory) changes.memory = +d.memory;
   if (+d.cpus !== vm.cpus) changes.cpus = +d.cpus;
   if (JSON.stringify(d.policy) !== JSON.stringify(vm.policy)) changes.policy = d.policy;
@@ -889,6 +902,52 @@ async function usbAction(action, devUuid, vmUuid, force) {
 /* ------------------------------------------------------------------ */
 /* USB page                                                            */
 /* ------------------------------------------------------------------ */
+function renderBluetooth() {
+  const bt = S.bt;
+  let html = pageHead("Bluetooth", "Mäuse, Tastaturen und Headsets mit dem VMBox-Host koppeln – sie funktionieren dann im Dashboard und in allen VMs.",
+    bt && bt.adapter.available ? '<button class="btn" data-act="bt-power" data-on="' + (bt.adapter.powered ? 0 : 1) + '">' + icon("power") +
+      (bt.adapter.powered ? "Ausschalten" : "Einschalten") + "</button>" +
+      '<button class="btn primary" data-act="bt-scan" ' + (bt.adapter.powered && !bt.adapter.discovering ? "" : "disabled") + ">" + icon("bluetooth") +
+      (bt.adapter.discovering ? "Suche läuft …" : "Geräte suchen") + "</button>" : "");
+  if (!bt) return html + '<div class="empty">Lade …</div>';
+  if (!bt.adapter.available) {
+    return html + '<div class="glass panel"><div class="empty">' + icon("bluetooth") + "<div>" + esc(bt.adapter.error || "Kein Bluetooth-Adapter gefunden") +
+      "</div></div></div>";
+  }
+  if (!bt.adapter.powered) html += '<div class="notice warn">Bluetooth ist ausgeschaltet.</div>';
+  const devIcon = (d) => /mouse/.test(d.icon) ? "Maus" : /keyboard/.test(d.icon) ? "Tastatur" : /audio|headset|headphone/.test(d.icon) ? "Audio" : /phone/.test(d.icon) ? "Telefon" : "Gerät";
+  const row = (d) => {
+    const busy = S.btBusy[d.address];
+    const acts = busy ? '<span class="badge blue">' + esc(busy) + " …</span>"
+      : !d.paired ? '<button class="btn small primary" data-act="bt-pair" data-mac="' + d.address + '">Koppeln</button>'
+      : (d.connected ? '<button class="btn small" data-act="bt-disconnect" data-mac="' + d.address + '">Trennen</button>'
+                     : '<button class="btn small" data-act="bt-connect" data-mac="' + d.address + '">Verbinden</button>') +
+        '<button class="btn small icon-only danger" title="Entfernen" data-act="bt-remove" data-mac="' + d.address + '" data-name="' + esc(d.name) + '">' + icon("trash") + "</button>";
+    return '<div class="list-item"><div class="lead">' + icon("bluetooth") + '</div><div class="main"><strong>' + esc(d.name) + "</strong><span>" +
+      devIcon(d) + " · " + d.address + (d.connected ? ' · <span class="yes">verbunden</span>' : d.paired ? " · gekoppelt" : "") +
+      (d.battery != null ? " · Akku " + d.battery + " %" : "") + '</span></div><div class="side">' + acts + "</div></div>";
+  };
+  const paired = bt.devices.filter((d) => d.paired);
+  const found = bt.devices.filter((d) => !d.paired);
+  html += '<div class="section-title">Gekoppelte Geräte</div><div class="glass list" style="margin-bottom:16px">' +
+    (paired.length ? paired.map(row).join("") : '<div class="empty" style="padding:18px">Noch keine Geräte gekoppelt.</div>') + "</div>";
+  html += '<div class="section-title">Gefundene Geräte</div><div class="glass list">' + (found.length ? found.map(row).join("")
+    : '<div class="empty" style="padding:18px">' + (bt.adapter.discovering ? "Suche läuft – Gerät in den Kopplungsmodus versetzen …"
+      : "Gerät in den Kopplungsmodus versetzen (bei Mäusen meist eine Taste an der Unterseite) und „Geräte suchen“ drücken.") + "</div>") + "</div>";
+  return html;
+}
+
+async function btAction(action, mac, label) {
+  S.btBusy[mac] = label;
+  renderPage(true);
+  try {
+    await api("POST", "/api/bluetooth/" + mac + "/" + action);
+    toast({ pair: "Gekoppelt und verbunden", connect: "Verbunden", disconnect: "Getrennt", remove: "Gerät entfernt" }[action]);
+  } catch (e) { toast(e.message, true); }
+  delete S.btBusy[mac];
+  loadPage();
+}
+
 function renderUSB() {
   const vms = (S.state.vms || []).filter((v) => v.running && v.policy.usb && v.type === "user");
   let html = pageHead("USB-Geräte", "Weise Geräte gezielt einer VM zu. Nicht zugewiesene Geräte bleiben isoliert beim Host.");
@@ -1042,6 +1101,12 @@ function renderSystem() {
     html += '<div class="glass panel"><h2>Installation</h2><p>VMBox dauerhaft auf eine Festplatte installieren – mit verschlüsseltem VM-Speicher und optionaler TPM-Entsperrung.</p>' +
       '<button class="btn primary" data-act="install">' + icon("download") + "VMBox installieren</button></div>";
   }
+  const eff = S.state.ui_scale_effective || 1;
+  html += '<div class="glass panel"><h2>Darstellung</h2><p>Vergrößert Dashboard, Leiste und – bei VMs mit „Wie VMBox“ – das Bild der VMs. ' +
+    "„Automatisch“ richtet sich nach der Pixeldichte des Bildschirms.</p>" +
+    '<div class="field"><label>Skalierung</label><select class="input" id="ui-scale"><option value="auto" ' + (S.state.ui_scale === "auto" ? "selected" : "") +
+    ">Automatisch (derzeit " + pct(eff) + ")</option>" + SCALE_OPTIONS.map((v) => '<option value="' + v + '" ' +
+    (S.state.ui_scale !== "auto" && +S.state.ui_scale === v ? "selected" : "") + ">" + pct(v) + "</option>").join("") + "</select></div></div>";
   html += '<div class="glass panel"><h2>Statusleiste</h2><p>Ohne Leiste bekommen die VMs den ganzen Bildschirm. ' +
     "<kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> blendet sie jederzeit ein und aus, <kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>Pos1</kbd> führt aus jeder VM zurück zum Dashboard.</p>" +
     switchRow("Statusleiste anzeigen", S.state.bar_hidden ? "Ausgeblendet – VMs im Vollbild." : "Sichtbar über allen VMs.",
@@ -1055,6 +1120,12 @@ function renderSystem() {
     '<button class="btn" data-act="host-reboot">' + icon("restore") + 'Neu starten</button><button class="btn danger" data-act="host-poweroff">' + icon("power") + "Ausschalten</button></div></div></div></div>";
   return html;
 }
+
+$("#main").addEventListener("change", (ev) => {
+  if (ev.target.id !== "ui-scale") return;
+  run(api("POST", "/api/settings/scale", { scale: ev.target.value === "auto" ? "auto" : +ev.target.value }), "Skalierung geändert")
+    .then(() => poll().then(() => renderPage(true))).catch(() => {});
+});
 
 $("#main").addEventListener("change", (ev) => {
   if (ev.target.id !== "bar-toggle") return;
@@ -1096,6 +1167,17 @@ async function pageAction(act, el) {
   }
   if (act === "media-eject") {
     return run(api("POST", "/api/media/eject", { device: el.dataset.device }), "Der Stick kann jetzt entfernt werden").then(loadPage).catch(() => {});
+  }
+  if (act === "bt-power") return run(api("POST", "/api/bluetooth/power", { on: el.dataset.on === "1" })).then(loadPage).catch(() => {});
+  if (act === "bt-scan") return run(api("POST", "/api/bluetooth/scan"), "Suche läuft 15 Sekunden").then(loadPage).catch(() => {});
+  if (act === "bt-pair") return btAction("pair", el.dataset.mac, "Koppeln");
+  if (act === "bt-connect") return btAction("connect", el.dataset.mac, "Verbinden");
+  if (act === "bt-disconnect") return btAction("disconnect", el.dataset.mac, "Trennen");
+  if (act === "bt-remove") {
+    if (await confirmBox("„" + el.dataset.name + "“ entfernen?", "Das Gerät wird entkoppelt und muss für eine erneute Nutzung neu gekoppelt werden.", "Entfernen", true)) {
+      return btAction("remove", el.dataset.mac, "Entfernen");
+    }
+    return;
   }
   if (act === "upload") {
     const input = document.createElement("input");

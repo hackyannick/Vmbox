@@ -47,6 +47,21 @@ class WindowGeometryTest(unittest.TestCase):
         self.assertEqual(d.window_geometry("uuid"), (1280, 1024))
 
 
+class AutoScaleTest(unittest.TestCase):
+    def test_density_from_xrandr(self):
+        from vmboxd.display import scale_for_dpi
+        d = X11Display(":0")
+        d._run = lambda *argv: "eDP-1 connected primary 2880x1800+0+0 (normal left inverted right x axis y axis) 302mm x 189mm\n"
+        self.assertEqual(d.auto_scale(), 2.25)         # 242 dpi, 14" 2880x1800
+        d._run = lambda *argv: "HDMI-1 connected primary 1920x1080+0+0 (normal) 527mm x 296mm\n"
+        self.assertEqual(d.auto_scale(), 1.0)          # 92 dpi, 24" Full HD
+        d._run = lambda *argv: "eDP-1 connected primary 1920x1200+0+0 (normal) 302mm x 189mm\n"
+        self.assertEqual(d.auto_scale(), 1.5)          # 161 dpi, 14" 1920x1200
+        d._run = lambda *argv: "Virtual-1 connected primary 1920x1080+0+0 (normal) 0mm x 0mm\n"
+        self.assertEqual(d.auto_scale(), 1.0)          # no physical size known
+        self.assertEqual(scale_for_dpi(1000), 1.0)
+
+
 class HostGraphicsTest(unittest.TestCase):
     def test_hardware_and_software_renderers(self):
         from vmboxd import host as hostmod

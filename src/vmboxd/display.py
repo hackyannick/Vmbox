@@ -21,6 +21,20 @@ class DisplayError(RuntimeError):
     pass
 
 
+# Pixel density that looks right at 100 %. Slightly above the classic 96 dpi
+# because laptop panels are viewed from closer up; gives values close to the
+# Windows defaults (14" 2880x1800 -> 225 %, 15.6" Full HD -> 125 %).
+BASE_DPI = 110
+
+
+def scale_for_dpi(dpi):
+    """Quarter steps between 1.0 and 3.0. Panels that report nonsense sizes
+    (projectors, some VMs) fall back to 1.0."""
+    if not dpi or dpi < 60 or dpi > 600:
+        return 1.0
+    return min(3.0, max(1.0, round(dpi / BASE_DPI * 4) / 4))
+
+
 class X11Display:
     def __init__(self, display=":0", xauthority=None):
         self.env = dict(os.environ, DISPLAY=display)
@@ -172,6 +186,23 @@ class X11Display:
             return None
         return (int(m.group(1)), int(m.group(2))) if m else None
 
+    def auto_scale(self):
+        """Scale for the primary monitor from its pixel density (see BASE_DPI)."""
+        try:
+            out = self._run("xrandr", "--current")
+        except DisplayError:
+            return 1.0
+        best = None
+        for line in out.splitlines():
+            m = re.search(r" connected (primary )?(\d+)x(\d+)\+\d+\+\d+.*?(\d+)mm x (\d+)mm", line)
+            if m and int(m.group(4)) > 0:
+                dpi = int(m.group(2)) / (int(m.group(4)) / 25.4)
+                if m.group(1) or best is None:
+                    best = dpi
+                if m.group(1):
+                    break
+        return scale_for_dpi(best)
+
     def idle_ms(self):
         try:
             return int(self._run("xprintidle").strip())
@@ -214,6 +245,9 @@ class VirtualDisplay:
 
     def screen_size(self):
         return (1920, 1080)
+
+    def auto_scale(self):
+        return 1.0
 
     def window_geometry(self, uuid):
         return (1920, 1043) if uuid in self._running() else None

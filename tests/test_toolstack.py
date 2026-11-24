@@ -346,6 +346,26 @@ class ToolstackTest(unittest.TestCase):
         self.assertEqual(diag["renderer"]["lines"], ["VMSVGA3d: Using DXVK backend", "GL_RENDERER: llvmpipe (LLVM 19.1.7, 256 bits)"])
         self.assertTrue(diag["renderer"]["software"])
 
+    def test_scaling_enlarges_the_guest_picture(self):
+        self.display.screen_size = lambda: (2880, 1800)
+        self.ts.ui_scale = lambda: 2.0
+        self.assertEqual(self.ts.bar_height(), 74)
+        vm = self.create("Win7", template="windows7")
+        self.ts.action(vm["uuid"], "start")
+        info = self.fake.vms[vm["uuid"]]["info"]
+        self.assertEqual(self.vbox.extradata(vm["uuid"])["GUI/ScaleFactor"], "2")
+        info["GuestAdditionsRunLevel"] = "3"
+        self.ts.apply_resolution_hints()
+        self.assertEqual(info["VideoModeHint"], "1440x863x32")      # (1800 - 74) / 2
+        # per VM override: 100 % = native resolution, no VirtualBox scaling
+        vm = self.ts.update_vm(vm["uuid"], {"scale": 1})
+        self.assertEqual(vm["scale"], "1")
+        self.assertNotIn("GUI/ScaleFactor", self.vbox.extradata(vm["uuid"]))
+        self.ts.apply_resolution_hints()
+        self.assertEqual(info["VideoModeHint"], "2880x1726x32")
+        with self.assertRaises(ToolstackError):
+            self.ts.update_vm(vm["uuid"], {"scale": 7})
+
     def test_switch_cycle(self):
         a, b = self.create("A"), self.create("B")
         self.ts.action(a["uuid"], "start")

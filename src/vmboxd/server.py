@@ -68,6 +68,8 @@ class App:
         self.settings_path = os.path.join(cfg.state_dir, "settings.json")
         self.settings = self._load_settings()
         toolstack.bar_hidden = lambda: bool(self.settings.get("bar_hidden"))
+        toolstack.ui_scale = self.effective_scale
+        self._auto_scale = (0.0, 1.0)
         self._autostarted_user_vms = False
         toolstack.is_locked = lambda: self.auth.locked
 
@@ -88,6 +90,24 @@ class App:
             os.replace(tmp, self.settings_path)
         except OSError as exc:
             log.warning("could not save settings: %s", exc)
+
+    def effective_scale(self):
+        """VMBox's scale: the setting, or with "auto" the monitor's density
+        (cached - asked several times a second by the shell and the bar)."""
+        setting = self.settings.get("ui_scale", "auto")
+        if setting != "auto":
+            try:
+                return float(setting)
+            except (TypeError, ValueError):
+                return 1.0
+        stamp, value = self._auto_scale
+        if time.monotonic() - stamp > 10:
+            try:
+                value = float(self.toolstack.display.auto_scale())
+            except Exception:  # noqa: BLE001 - display not ready yet
+                value = 1.0
+            self._auto_scale = (time.monotonic(), value)
+        return value
 
     def on_unlock(self):
         """Called after a successful login: start "start on boot" user VMs once."""
@@ -154,6 +174,8 @@ class App:
             "idle_lock": self.cfg.idle_lock,
             # public: vmbox-shell reads it to show or hide the top bar
             "bar_hidden": bool(self.settings.get("bar_hidden")),
+            "ui_scale": self.settings.get("ui_scale", "auto"),
+            "ui_scale_effective": self.effective_scale(),
         }
         if authenticated:
             data["focus"] = self.toolstack.focus()
@@ -616,6 +638,45 @@ def api_bar(h, action):
     h.app.set_setting("bar_hidden", hidden)
     h.app.toolstack.invalidate()
     h._json(200, {"bar_hidden": hidden})
+
+
+@route("GET", r"/api/bluetooth")
+def api_bluetooth(h):
+    adapter = h.app.host.bluetooth_adapter()
+    devices = h.app.host.bluetooth_devices() if adapter.get("available") else []
+    h._json(200, {"adapter": adapter, "devices": devices})
+
+
+@route("POST", r"/api/bluetooth/(power|scan)")
+def api_bluetooth_adapter(h, action):
+    if action == "power":
+        h.app.host.bluetooth_power(bool(h._body().get("on", True)))
+    else:
+        h.app.host.bluetooth_scan()
+    h._json(200, {"ok": True})
+
+
+@route("POST", r"/api/bluetooth/([0-9A-Fa-f:]{17})/(pair|connect|disconnect|remove)")
+def api_bluetooth_device(h, mac, action):
+    getattr(h.app.host, "bluetooth_" + action)(mac)
+    h._json(200, {"ok": True})
+
+
+@route("POST", r"/api/settings/scale")
+def api_scale(h):
+    from .toolstack import SCALES
+    value = h._body().get("scale", "auto")
+    if value != "auto":
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise ApiError("Ungültige Skalierung") from None
+        if value not in SCALES:
+            raise ApiError("Ungültige Skalierung")
+    h.app.set_setting("ui_scale", value)
+    h.app._auto_scale = (0.0, 1.0)
+    h.app.toolstack.refresh_scaling()
+    h._json(200, {"ui_scale": value, "ui_scale_effective": h.app.effective_scale()})
 
 
 @route("GET", r"/api/host")

@@ -124,6 +124,17 @@ Zum Ausprobieren in einer anderen VM muss dort verschachtelte Virtualisierung
   bekommt automatisch UEFI, Secure Boot und ein virtuelles TPM 2.0; Windows 7
   bekommt BIOS, USB 2.0 und eine Intel-PRO/1000-Netzwerkkarte, für die es
   eigene Treiber mitbringt.
+* **Bluetooth** (Werkzeugleiste → *Bluetooth*): Mäuse, Tastaturen und Headsets
+  mit dem Host koppeln – „Geräte suchen“, „Koppeln“ (inkl. Vertrauen und
+  Verbinden), Trennen, Entfernen. Gekoppelte Eingabegeräte funktionieren im
+  Dashboard und in allen VMs. Firmware für Intel-, Realtek-, MediaTek-,
+  Atheros- und Broadcom-Chips ist im Image.
+* **Skalierung für hochauflösende Displays** (*System → Darstellung*):
+  „Automatisch“ richtet sich nach der Pixeldichte (z. B. 14″ 2880×1800 →
+  225 %) und vergrößert Dashboard und Leiste. VMs mit „Wie VMBox“ bekommen
+  dieselbe Vergrößerung: VirtualBox skaliert ihr Bild, der Gast arbeitet mit
+  entsprechend kleinerer Auflösung. Pro VM einstellbar unter *Hardware →
+  Anzeige-Skalierung* („100 %“ = native Auflösung).
 * **Gasterweiterungen** (Guest Additions) legt der Disc-Knopf an der VM-Karte
   bzw. *Hardware → Gasterweiterungen einlegen* ins virtuelle DVD-Laufwerk ein,
   auch im laufenden Betrieb (`vmbox-ctl guest-additions <vm>`). Danach im Gast

@@ -30,6 +30,14 @@ firmware-amd-graphics
 intel-microcode
 amd64-microcode
 
+# --- Bluetooth (mice, keyboards, headsets on the host) ------------------
+# Firmware for the common laptop chips: Intel (firmware-iwlwifi), Realtek
+# (firmware-realtek), Atheros (firmware-atheros), MediaTek, Broadcom.
+bluez
+bluez-firmware
+firmware-mediatek
+rfkill
+
 # --- Networking & firewall ---------------------------------------------
 network-manager
 wpasupplicant

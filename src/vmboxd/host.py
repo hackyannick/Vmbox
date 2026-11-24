@@ -6,6 +6,7 @@ import re
 import shutil
 import socket
 import subprocess
+import threading
 import time
 
 
@@ -21,6 +22,47 @@ def _run(*argv, timeout=30):
     if proc.returncode != 0:
         raise HostError((proc.stderr or proc.stdout).strip() or "%s failed" % argv[0])
     return proc.stdout
+
+
+MAC_RE = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
+BT_ERRORS = [
+    (r"No default controller|not available", "Kein Bluetooth-Adapter gefunden"),
+    (r"Blocked|rfkill", "Bluetooth ist gesperrt (Funkschalter bzw. Flugmodus)"),
+    (r"AuthenticationFailed|AuthenticationRejected|AuthenticationCanceled",
+     "Koppeln fehlgeschlagen – das Gerät bitte in den Kopplungsmodus versetzen und erneut versuchen"),
+    (r"ConnectionAttemptFailed|Page Timeout|Host is down|not connected|br-connection",
+     "Gerät nicht erreichbar – ist es eingeschaltet und in der Nähe?"),
+    (r"AlreadyExists", "Das Gerät ist bereits gekoppelt"),
+    (r"DoesNotExist|not available", "Gerät nicht gefunden – bitte erneut suchen"),
+]
+
+
+def _bt_message(text):
+    for pattern, message in BT_ERRORS:
+        if re.search(pattern, text, re.I):
+            return message
+    return text.strip()
+
+
+def _btctl(*args, timeout=20):
+    """Run bluetoothctl; it sometimes exits 0 although the command failed."""
+    try:
+        out = _run("bluetoothctl", *args, timeout=timeout)
+    except HostError as exc:
+        raise HostError(_bt_message(str(exc))) from exc
+    for line in out.splitlines():
+        if re.search(r"Failed to|No default controller|org\.bluez\.Error", line):
+            raise HostError(_bt_message(line))
+    return out
+
+
+def _bt_fields(text):
+    fields = {}
+    for line in text.splitlines():
+        if ":" in line and line.startswith(("\t", " ")):
+            key, value = line.strip().split(":", 1)
+            fields.setdefault(key.strip(), value.strip())
+    return fields
 
 
 def split_nmcli(line):
@@ -207,6 +249,93 @@ class Host:
                 devices.append({"device": device, "type": typ, "state": state, "connection": conn})
         return devices
 
+    # -- Bluetooth (BlueZ) -------------------------------------------------------
+    _scan_until = 0.0
+
+    def bluetooth_adapter(self):
+        try:
+            out = _btctl("show", timeout=10)
+        except HostError as exc:
+            return {"available": False, "error": str(exc)}
+        m = re.search(r"Controller ([0-9A-F:]{17})", out)
+        fields = _bt_fields(out)
+        return {
+            "available": True,
+            "address": m.group(1) if m else "",
+            "name": fields.get("Alias") or fields.get("Name", ""),
+            "powered": fields.get("Powered") == "yes",
+            "discovering": fields.get("Discovering") == "yes" or time.monotonic() < self._scan_until,
+        }
+
+    def bluetooth_devices(self, limit=40):
+        devices = []
+        out = _btctl("devices", timeout=10)
+        for line in out.splitlines()[:limit]:
+            m = re.match(r"Device ([0-9A-F:]{17}) ?(.*)", line.strip())
+            if not m:
+                continue
+            mac = m.group(1)
+            try:
+                fields = _bt_fields(_btctl("info", mac, timeout=10))
+            except HostError:
+                continue
+            name = fields.get("Alias") or fields.get("Name") or m.group(2) or mac
+            paired = fields.get("Paired") == "yes"
+            # skip anonymous neighbours whose name is only their address
+            if not paired and re.fullmatch(r"([0-9A-F]{2}[-:]){5}[0-9A-F]{2}", name, re.I):
+                continue
+            battery = re.search(r"\((\d+)\)", fields.get("Battery Percentage", ""))
+            devices.append({
+                "address": mac, "name": name, "icon": fields.get("Icon", ""),
+                "paired": paired, "trusted": fields.get("Trusted") == "yes",
+                "connected": fields.get("Connected") == "yes",
+                "battery": int(battery.group(1)) if battery else None,
+            })
+        devices.sort(key=lambda d: (not d["connected"], not d["paired"], d["name"].lower()))
+        return devices
+
+    def bluetooth_power(self, on):
+        if on:
+            try:
+                _run("rfkill", "unblock", "bluetooth", timeout=10)
+            except HostError:
+                pass  # no permission or no rfkill switch - power on may still work
+        _btctl("power", "on" if on else "off")
+
+    def bluetooth_scan(self, seconds=15):
+        """Search for devices in the background; results show up in the list."""
+        self._scan_until = time.monotonic() + seconds
+
+        def scan():
+            try:
+                _run("bluetoothctl", "--timeout", str(seconds), "scan", "on", timeout=seconds + 10)
+            except HostError:
+                pass
+        threading.Thread(target=scan, daemon=True, name="bt-scan").start()
+
+    @staticmethod
+    def _mac(mac):
+        mac = str(mac or "").upper()
+        if not MAC_RE.match(mac):
+            raise HostError("Ungültige Bluetooth-Adresse")
+        return mac
+
+    def bluetooth_pair(self, mac):
+        """Pair (mice and keyboards use "just works"), trust and connect."""
+        mac = self._mac(mac)
+        _btctl("--agent", "NoInputNoOutput", "pair", mac, timeout=45)
+        _btctl("trust", mac)
+        _btctl("connect", mac, timeout=25)
+
+    def bluetooth_connect(self, mac):
+        _btctl("connect", self._mac(mac), timeout=25)
+
+    def bluetooth_disconnect(self, mac):
+        _btctl("disconnect", self._mac(mac))
+
+    def bluetooth_remove(self, mac):
+        _btctl("remove", self._mac(mac))
+
     # -- power ---------------------------------------------------------------
     def poweroff(self):
         _run("systemctl", "poweroff")
@@ -233,6 +362,58 @@ class FakeHost(Host):
 
     def wifi_networks(self):
         return list(self._wifi)
+
+    _bt = None
+
+    def _bt_list(self):
+        if self._bt is None:
+            self._bt = [
+                {"address": "D4:12:43:7A:01:22", "name": "Keyboard K380", "icon": "input-keyboard", "paired": True,
+                 "trusted": True, "connected": True, "battery": 70},
+                {"address": "F2:9C:31:0B:5E:10", "name": "MX Master 3", "icon": "input-mouse", "paired": False,
+                 "trusted": False, "connected": False, "battery": None},
+            ]
+            self._bt_powered = True
+        return self._bt
+
+    def bluetooth_adapter(self):
+        self._bt_list()
+        return {"available": True, "address": "3C:21:9C:00:11:22", "name": "vmbox", "powered": self._bt_powered,
+                "discovering": time.monotonic() < self._scan_until}
+
+    def bluetooth_devices(self, limit=40):
+        devices = sorted(self._bt_list(), key=lambda d: (not d["connected"], not d["paired"], d["name"].lower()))
+        return [dict(d) for d in devices]
+
+    def bluetooth_power(self, on):
+        self._bt_list()
+        self._bt_powered = bool(on)
+
+    def bluetooth_scan(self, seconds=15):
+        self._scan_until = time.monotonic() + seconds
+        if not any(d["name"] == "Galaxy Buds" for d in self._bt_list()):
+            self._bt.append({"address": "A0:B1:C2:D3:E4:F5", "name": "Galaxy Buds", "icon": "audio-headset",
+                             "paired": False, "trusted": False, "connected": False, "battery": None})
+
+    def _bt_device(self, mac):
+        mac = self._mac(mac)
+        for d in self._bt_list():
+            if d["address"] == mac:
+                return d
+        raise HostError("Gerät nicht gefunden – bitte erneut suchen")
+
+    def bluetooth_pair(self, mac):
+        self._bt_device(mac).update(paired=True, trusted=True, connected=True)
+
+    def bluetooth_connect(self, mac):
+        self._bt_device(mac)["connected"] = True
+
+    def bluetooth_disconnect(self, mac):
+        self._bt_device(mac)["connected"] = False
+
+    def bluetooth_remove(self, mac):
+        d = self._bt_device(mac)
+        self._bt.remove(d)
 
     @staticmethod
     def battery():
